@@ -25,7 +25,9 @@ export function VersionTimeline() {
   const pending = jobs.filter((j) => j.status === "QUEUED" || j.status === "RUNNING");
 
   return (
-    <div className="border-t border-neutral-800 bg-neutral-950">
+    // shrink-0: as a flex child it would otherwise compress and clip its cards
+    // when the viewer above claims the space.
+    <div className="shrink-0 border-t border-neutral-800 bg-neutral-950">
       <div className="flex items-center justify-between px-4 py-2">
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
           Versions
@@ -41,7 +43,9 @@ export function VersionTimeline() {
         )}
       </div>
 
-      <div className="flex gap-2 overflow-x-auto px-4 pb-3">
+      {/* pt-1: overflow-x-auto also clips vertically, which would cut the
+          selected card's ring. */}
+      <div className="flex gap-2 overflow-x-auto px-4 pb-3 pt-1">
         {versions.map((v, i) => {
           const isActive = v.id === activeId;
           const isHead = v.id === headVersionId;

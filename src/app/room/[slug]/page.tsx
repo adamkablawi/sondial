@@ -37,6 +37,38 @@ export default function RoomPage() {
   const [joining, setJoining] = useState(false);
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [closing, setClosing] = useState(false);
+
+  const closed = useRoomStore((s) => s.closed);
+
+  const closeRoom = useCallback(async () => {
+    if (!slug || closing) return;
+    setClosing(true);
+    try {
+      const res = await fetch(`/api/rooms/${slug}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Could not close the room");
+      }
+      router.push("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not close the room");
+      setClosing(false);
+      setConfirmClose(false);
+    }
+  }, [slug, sessionId, closing, router]);
+
+  // Someone else deleted the room while this tab was open.
+  useEffect(() => {
+    if (!closed) return;
+    const timer = setTimeout(() => router.push("/"), 3000);
+    return () => clearTimeout(timer);
+  }, [closed, router]);
 
   useRoomSocket(joined ? slug : null, joined ? sessionId : null);
 
@@ -79,6 +111,27 @@ export default function RoomPage() {
     autoJoinedFor.current = slug;
     void join(storedName);
   }, [slug, storedName, sessionId, join]);
+
+  if (closed) {
+    return (
+      <main className="flex min-h-screen items-center justify-center p-6">
+        <div className="max-w-sm space-y-3 text-center">
+          <h1 className="text-xl font-semibold text-white">This room was closed</h1>
+          <p className="text-sm text-neutral-400">
+            {closed.by ? `${closed.by} closed it` : "It was closed"} and its history
+            was deleted. Taking you back...
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/")}
+            className="rounded-lg bg-neutral-800 px-4 py-2 text-sm text-neutral-200 hover:bg-neutral-700"
+          >
+            Go now
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   if (!joined) {
     return (
@@ -139,8 +192,48 @@ export default function RoomPage() {
             <p className="text-[11px] text-neutral-500">{slug}</p>
           </div>
         </div>
-        <PresenceBar />
+        <div className="flex items-center gap-4">
+          <PresenceBar />
+
+          {confirmClose ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-red-300">
+                Delete this room and all its history?
+              </span>
+              <button
+                type="button"
+                onClick={() => void closeRoom()}
+                disabled={closing}
+                className="rounded-md bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+              >
+                {closing ? "Closing..." : "Delete permanently"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmClose(false)}
+                disabled={closing}
+                className="rounded-md bg-neutral-800 px-2.5 py-1 text-[11px] text-neutral-300 hover:bg-neutral-700"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmClose(true)}
+              className="rounded-md border border-neutral-700 px-2.5 py-1 text-[11px] text-neutral-400 transition-colors hover:border-red-500/50 hover:text-red-300"
+            >
+              Close room
+            </button>
+          )}
+        </div>
       </header>
+
+      {error && (
+        <p className="border-b border-red-500/30 bg-red-500/10 px-4 py-2 text-xs text-red-300">
+          {error}
+        </p>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-72 shrink-0 overflow-hidden border-r border-neutral-800 bg-neutral-950">

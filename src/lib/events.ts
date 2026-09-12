@@ -79,7 +79,10 @@ export type RoomEvent =
       designState: DesignStateDTO | null;
       headVersionId: string | null;
     }
-  | { type: "head"; headVersionId: string };
+  | { type: "head"; headVersionId: string }
+  /// The room and all its history were deleted. Anyone still viewing it is
+  /// looking at something that no longer exists and has to be sent away.
+  | { type: "closed"; by: string | null };
 
 // ── Socket.IO client → server ──
 

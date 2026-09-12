@@ -5,6 +5,39 @@ import { renderDesignState, seedDesignState } from "@/lib/design-state";
 
 export const maxDuration = 60;
 
+/** GET -> every room, newest first, for the home page list. */
+export async function GET() {
+  try {
+    const rooms = await db.room.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        project: { select: { id: true } },
+        _count: { select: { participants: true, messages: true } },
+      },
+    });
+
+    const versionCounts = await db.objectVersion.groupBy({
+      by: ["projectId"],
+      _count: { _all: true },
+    });
+    const byProject = new Map(versionCounts.map((v) => [v.projectId, v._count._all]));
+
+    return NextResponse.json({
+      rooms: rooms.map((r) => ({
+        slug: r.slug,
+        name: r.name,
+        createdAt: r.createdAt.toISOString(),
+        participants: r._count.participants,
+        messages: r._count.messages,
+        versions: byProject.get(r.project.id) ?? 0,
+      })),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
 /**
  * POST { name, brief, constraints? } -> { roomSlug }
  *

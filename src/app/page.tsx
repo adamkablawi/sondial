@@ -1,7 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+
+interface RoomSummary {
+  slug: string;
+  name: string;
+  createdAt: string;
+  participants: number;
+  messages: number;
+  versions: number;
+}
 
 export default function HomePage() {
   const router = useRouter();
@@ -12,6 +21,44 @@ export default function HomePage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [joinSlug, setJoinSlug] = useState("");
+
+  const [rooms, setRooms] = useState<RoomSummary[]>([]);
+  const [confirmSlug, setConfirmSlug] = useState<string | null>(null);
+  const [closingSlug, setClosingSlug] = useState<string | null>(null);
+
+  const loadRooms = useCallback(async () => {
+    try {
+      const res = await fetch("/api/rooms");
+      if (res.ok) setRooms((await res.json()).rooms);
+    } catch {
+      // Leave the list as-is; creating or joining still works without it.
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRooms();
+  }, [loadRooms]);
+
+  const closeRoom = useCallback(
+    async (slug: string) => {
+      setClosingSlug(slug);
+      setError(null);
+      try {
+        const res = await fetch(`/api/rooms/${slug}`, { method: "DELETE" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error ?? "Could not close the room");
+        }
+        setRooms((list) => list.filter((r) => r.slug !== slug));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not close the room");
+      } finally {
+        setClosingSlug(null);
+        setConfirmSlug(null);
+      }
+    },
+    [],
+  );
 
   const create = async () => {
     if (!name.trim() || !brief.trim() || creating) return;
@@ -127,6 +174,63 @@ export default function HomePage() {
             Join
           </button>
         </div>
+
+        {rooms.length > 0 && (
+          <div className="space-y-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+              Rooms
+            </h2>
+
+            {rooms.map((room) => (
+              <div
+                key={room.slug}
+                className="flex items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-2.5"
+              >
+                <button
+                  type="button"
+                  onClick={() => router.push(`/room/${room.slug}`)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <div className="truncate text-sm text-neutral-200">{room.name}</div>
+                  <div className="truncate text-[11px] text-neutral-500">
+                    {room.slug} · {room.versions} version
+                    {room.versions === 1 ? "" : "s"} · {room.participants} participant
+                    {room.participants === 1 ? "" : "s"}
+                  </div>
+                </button>
+
+                {confirmSlug === room.slug ? (
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <span className="text-[11px] text-red-300">Delete all history?</span>
+                    <button
+                      type="button"
+                      onClick={() => void closeRoom(room.slug)}
+                      disabled={closingSlug === room.slug}
+                      className="rounded-md bg-red-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                    >
+                      {closingSlug === room.slug ? "..." : "Delete"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmSlug(null)}
+                      className="rounded-md bg-neutral-800 px-2 py-1 text-[11px] text-neutral-300 hover:bg-neutral-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmSlug(room.slug)}
+                    className="shrink-0 rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-400 transition-colors hover:border-red-500/50 hover:text-red-300"
+                  >
+                    Close
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </main>
   );

@@ -47,6 +47,9 @@ interface RoomState {
   selectedVersionId: string | null;
   selectVersion: (id: string | null) => void;
 
+  /// Set when the room was deleted out from under whoever is viewing it.
+  closed: { by: string | null } | null;
+
   connected: boolean;
   setConnected: (v: boolean) => void;
 
@@ -82,11 +85,17 @@ export const useRoomStore = create<RoomState>()(
       selectedVersionId: null,
       selectVersion: (id) => set({ selectedVersionId: id }),
 
+      closed: null,
+
       connected: false,
       setConnected: (v) => set({ connected: v }),
 
       hydrate: (snapshot) =>
         set({
+          // Cleared here so entering a different room doesn't inherit a
+          // previous room's closed state and bounce straight back out.
+          closed: null,
+          selectedVersionId: null,
           slug: snapshot.room.slug,
           roomName: snapshot.room.name,
           constraints: snapshot.project.constraints,
@@ -131,6 +140,10 @@ export const useRoomStore = create<RoomState>()(
 
           case "head":
             set({ headVersionId: event.headVersionId });
+            break;
+
+          case "closed":
+            set({ closed: { by: event.by } });
             break;
         }
       },

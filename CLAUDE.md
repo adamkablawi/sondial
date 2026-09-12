@@ -122,6 +122,12 @@ message explains it in chat. Verified end-to-end — concurrent edits chain
 - **Approvals are schema-only.** `VersionStatus` has APPROVED/REJECTED/SUPERSEDED
   and the timeline renders them, but no endpoint sets them, and there is no
   restore/branch/compare UI yet.
+- **Closing a room is a permanent delete, by explicit choice** — not an archive.
+  `DELETE /api/rooms/[slug]` drops the room, chat, jobs, versions and design-state
+  history, and any participant may do it. Deletion order in that route is
+  load-bearing: jobs before versions (`GenerationJob.baseVersion` is required, so
+  Postgres would otherwise refuse), and `parentId` is nulled first because version
+  lineage is self-referential. Don't "simplify" it to a bare `project.delete`.
 - **AR is not implemented.** The viewer is desktop R3F. `@react-three/xr` is not
   installed; the scene graph is isolated in `ModelLoader` so wrapping it in an XR
   session is contained, but treat AR as unstarted.

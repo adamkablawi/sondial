@@ -27,10 +27,13 @@ export function VersionTimeline() {
   return (
     // shrink-0: as a flex child it would otherwise compress and clip its cards
     // when the viewer above claims the space. min-h matches the composer's
-    // footer band in ChatPanel.tsx (search "min-h-[88px]" there) so the two
+    // footer band in ChatPanel.tsx (search "min-h-[104px]" there) so the two
     // border-t lines land at the same height across the columns — keep both
-    // values equal if either changes.
-    <div className="flex min-h-[88px] shrink-0 flex-col justify-center border-t border-neutral-800 bg-neutral-950">
+    // values equal if either changes. This is a floor, not a fixed height: if
+    // the cards' real content is taller than this number, the box grows past
+    // it and the composer (which stays pinned to the min-h) falls out of
+    // alignment again — that is exactly what 88px did.
+    <div className="flex min-h-[104px] shrink-0 flex-col justify-center border-t border-neutral-800 bg-neutral-950">
       <div className="flex items-center justify-between px-4 py-1.5">
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
           Versions

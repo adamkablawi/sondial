@@ -140,10 +140,10 @@ export function ChatPanel() {
         </div>
       )}
 
-      {/* min-h matches VersionTimeline's footer band (search "min-h-[88px]"
+      {/* min-h matches VersionTimeline's footer band (search "min-h-[104px]"
           there) so this border-t lands at the same height as the timeline's,
           across the two columns — keep both values equal if either changes. */}
-      <div className="flex min-h-[88px] flex-col justify-center border-t border-neutral-800 p-3">
+      <div className="flex min-h-[104px] flex-col justify-center border-t border-neutral-800 p-3">
         <div className="mb-2 flex gap-1">
           <button
             type="button"

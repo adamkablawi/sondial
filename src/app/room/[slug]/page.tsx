@@ -172,7 +172,7 @@ export default function RoomPage() {
 
   return (
     <main className="flex h-screen flex-col">
-      <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
+      <header className="flex items-center justify-between border-b border-neutral-800 px-4 pb-3 pt-6">
         <div className="flex items-center gap-3">
           <button
             type="button"

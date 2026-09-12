@@ -11,10 +11,9 @@
 }
 
 /* Tailwind's type, spacing and the fixed panel widths are all rem-based, so the
-   root size is the single knob for overall UI scale. 15px reads a little tighter
-   than the 16px default without shrinking any one element out of proportion. */
+   root size is the single knob for overall UI scale. */
 html {
-  font-size: 15px;
+  font-size: 14px;
 }
 
 body {

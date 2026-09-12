@@ -263,6 +263,17 @@ const PROMPT_SYSTEM = `You write prompts for a text-to-3D generation model.
 
 Given a product's design state, write a single dense visual description of the physical object: form, proportions, key features, materials, finish, colour.
 
+Text-to-3D models default strongly to the ordinary shape for a recognized object
+category — a mug defaults to cylindrical, a bottle to round, a plate to circular —
+and tend to ignore a single soft adjective that contradicts it. If the geometry
+describes a shape that departs from that default for this category (angular,
+rectangular, square, flat-sided, faceted, asymmetric, and similar), state the
+departure emphatically: put it in the first sentence, describe concretely what
+makes it non-default (flat vertical walls, sharp corners, straight edges), and say
+plainly what it is NOT ("not round, not cylindrical") rather than mentioning it
+once as one adjective among many ordinary descriptors. If the shape is ordinary
+for the category, describe it plainly — do not invent a departure nobody asked for.
+
 Constraints:
 - One paragraph, under 90 words.
 - Describe only what is physically visible. No rationale, no requirements language, no bullet points, no headings.

@@ -184,14 +184,19 @@ async function processJob(payload: GenerationJobPayload): Promise<void> {
       .reverse()
       .map((m) => ({ author: m.participant?.displayName ?? "system", body: m.body }));
 
-    const strategy = await classifyInstruction(record.instruction);
-
-    const nextState = await evolveDesignState({
-      current: currentState,
-      instruction: record.instruction,
-      history,
-      constraints: record.project.constraints,
-    });
+    // classifyInstruction only needs the raw instruction text; evolveDesignState
+    // doesn't depend on its result — running them in parallel shaves an LLM
+    // round-trip off the wall-clock time before Meshy generation even starts.
+    // compileMeshyPrompt genuinely depends on evolve's output, so it stays after.
+    const [strategy, nextState] = await Promise.all([
+      classifyInstruction(record.instruction),
+      evolveDesignState({
+        current: currentState,
+        instruction: record.instruction,
+        history,
+        constraints: record.project.constraints,
+      }),
+    ]);
 
     const prompt = await compileMeshyPrompt(nextState);
 

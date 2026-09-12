@@ -3,6 +3,24 @@ import type { MeshGenerationProvider, JobStatus, MeshGenerationResult } from "..
 const MESHY_API_BASE = "https://api.meshy.ai";
 
 /**
+ * "meshy-6-lite" is Meshy's own lightweight tier (same cost as the
+ * deprecated meshy-5) — the fastest documented option short of accepting
+ * lower quality outright. "meshy-6" (mid-tier) and "meshy-7" (latest,
+ * slower — its ultra_mode explicitly trades time for fidelity) are the
+ * other standard-generation choices; override via MESHY_AI_MODEL to compare.
+ */
+const AI_MODEL = process.env.MESHY_AI_MODEL ?? "meshy-6-lite";
+
+/**
+ * Meshy's docs don't state how target_polycount affects generation time —
+ * this is an inference (less mesh detail to compute), not a documented fact.
+ * 10,000 is a real cut from the previous 30,000 default while staying well
+ * above the point where shapes start looking faceted. Override via
+ * MESHY_TARGET_POLYCOUNT to tune, or push back to 30000 if quality suffers.
+ */
+const TARGET_POLYCOUNT = Number(process.env.MESHY_TARGET_POLYCOUNT ?? 10_000);
+
+/**
  * Meshy AI provider — supports both image-to-3D and text-to-3D generation.
  *
  * Image-to-3D: POST /openapi/v1/image-to-3d
@@ -52,9 +70,9 @@ export class MeshyProvider implements MeshGenerationProvider {
 
     const body: Record<string, unknown> = {
       image_url: imageUrl,
-      ai_model: "meshy-6",
+      ai_model: AI_MODEL,
       topology: "triangle",
-      target_polycount: 30000,
+      target_polycount: TARGET_POLYCOUNT,
     };
 
     // When text is provided alongside the image, pass it as texture guidance
@@ -85,9 +103,9 @@ export class MeshyProvider implements MeshGenerationProvider {
       body: JSON.stringify({
         mode: "preview",
         prompt,
-        ai_model: "meshy-6",
+        ai_model: AI_MODEL,
         topology: "triangle",
-        target_polycount: 30000,
+        target_polycount: TARGET_POLYCOUNT,
       }),
     });
 

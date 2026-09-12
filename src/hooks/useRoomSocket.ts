@@ -20,7 +20,16 @@ export function useRoomSocket(slug: string | null, sessionId: string | null) {
   useEffect(() => {
     if (!slug || !sessionId) return;
 
-    const url = process.env.NEXT_PUBLIC_REALTIME_URL ?? "http://localhost:3001";
+    // Derived from the host the page was served from, so it is correct for
+    // localhost and for LAN guests alike without anyone maintaining an IP that
+    // goes stale the next time DHCP hands out a new address. Set
+    // NEXT_PUBLIC_REALTIME_URL only when the socket lives somewhere else
+    // entirely, such as behind a tunnel.
+    const port = process.env.NEXT_PUBLIC_REALTIME_PORT ?? "3001";
+    const url =
+      process.env.NEXT_PUBLIC_REALTIME_URL ||
+      `${window.location.protocol}//${window.location.hostname}:${port}`;
+
     const socket: Socket = io(url, { transports: ["websocket", "polling"] });
 
     const join = () => socket.emit(SOCKET_EVENTS.join, { roomSlug: slug, sessionId });

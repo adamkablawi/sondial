@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ModelViewer } from "@/components/viewer/ModelViewer";
 import { ARLauncher } from "@/components/viewer/ARLauncher";
@@ -102,16 +102,17 @@ export default function RoomPage() {
     [slug, sessionId, setIdentity, hydrate],
   );
 
-  // Returning visitors rejoin automatically and keep their attribution.
-  // Keyed on the slug rather than a boolean because React Strict Mode invokes
-  // effects twice in dev: without the guard both invocations fire a join.
-  const autoJoinedFor = useRef<string | null>(null);
+  // A returning visitor's name is pre-filled, not auto-submitted: joining used
+  // to fire from a background effect the instant storedName was available,
+  // which could complete before a person at the keyboard finished typing a
+  // different name, silently discarding it and entering under the old one.
+  // Pre-filling still saves a returning visitor the retype (Enter/click
+  // Join carries it straight through) while leaving the field genuinely
+  // editable for anyone who wants to be someone else on this device.
   useEffect(() => {
-    if (!slug || !storedName || !sessionId) return;
-    if (autoJoinedFor.current === slug) return;
-    autoJoinedFor.current = slug;
-    void join(storedName);
-  }, [slug, storedName, sessionId, join]);
+    if (!storedName) return;
+    setName((current) => (current === "" ? storedName : current));
+  }, [storedName]);
 
   if (closed) {
     return (
@@ -149,6 +150,9 @@ export default function RoomPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && name.trim() && void join(name.trim())}
+            // Pre-filled from a prior visit; select it so the first keystroke
+            // replaces it outright instead of appending to the old name.
+            onFocus={(e) => e.currentTarget.select()}
             placeholder="Your name"
             autoFocus
             className="w-full rounded-xl border border-neutral-700 bg-neutral-900/50 px-4 py-3 text-sm text-neutral-100 placeholder-neutral-500 outline-none focus:border-neutral-500"

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getServerSupabase } from "@/lib/supabase/server";
 import type { Room, Version } from "@/lib/types";
+import { normalizeRoomCode } from "@/lib/room-code";
 import { RoomShell } from "./RoomShell";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export default async function RoomPage({ params }: { params: Promise<{ code: str
   const { data: room, error } = await supabase
     .from("rooms")
     .select("*")
-    .eq("code", code.toLowerCase())
+    .eq("code", normalizeRoomCode(code))
     .maybeSingle();
 
   // A failed lookup and a missing room are different things. Showing "that

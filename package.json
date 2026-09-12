@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "verify:grok": "tsx scripts/verify-grok.ts",
     "verify:llm": "tsx scripts/verify-llm.ts",
-    "verify:supabase": "tsx scripts/verify-supabase.ts"
+    "verify:supabase": "tsx scripts/verify-supabase.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "peek": "tsx scripts/peek.ts"
   },
   "dependencies": {
     "@google/model-viewer": "^4.3.1",

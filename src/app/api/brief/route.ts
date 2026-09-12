@@ -12,8 +12,9 @@ The brief will be used as a living document that guides AI image and 3D mesh gen
  * POST { image?: string (base64, no prefix), prompt?: string }
  * → { brief: string }
  *
- * Uses GPT-4o vision when an image is supplied, GPT-4o-mini for text only.
- * Falls back to the raw prompt when no OPENAI_API_KEY is set.
+ * Uses Gemini — natively multimodal, so the same model handles both the
+ * image and text-only cases, unlike the GPT-4o/GPT-4o-mini split this route
+ * used previously. Falls back to the raw prompt when no GEMINI_API_KEY is set.
  */
 export async function POST(request: Request) {
   try {
@@ -26,17 +27,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "image or prompt required" }, { status: 400 });
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
 
     // No key — return the raw prompt as-is (mock / no-key mode)
     if (!apiKey) {
       return NextResponse.json({ brief: prompt ?? "A 3D object." });
     }
 
-    // Build user message content — use vision when image is provided
+    // Build the content parts — an inline image part when one is supplied,
+    // always followed by a text part.
     type ContentPart =
-      | { type: "text"; text: string }
-      | { type: "image_url"; image_url: { url: string; detail: "high" } };
+      | { text: string }
+      | { inline_data: { mime_type: string; data: string } };
 
     const contentParts: ContentPart[] = [];
 
@@ -47,14 +49,10 @@ export async function POST(request: Request) {
         : image.startsWith("PHN2Z") ? "image/svg+xml"
         : "image/jpeg";
 
-      contentParts.push({
-        type: "image_url",
-        image_url: { url: `data:${mimeType};base64,${image}`, detail: "high" },
-      });
+      contentParts.push({ inline_data: { mime_type: mimeType, data: image } });
     }
 
     contentParts.push({
-      type: "text",
       text: image && prompt
         ? `Write a design brief for the object shown in this image. The user also described it as: "${prompt}". Incorporate both.`
         : image
@@ -62,32 +60,36 @@ export async function POST(request: Request) {
         : `Write a design brief for this object: "${prompt}"`,
     });
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const model = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "x-goog-api-key": apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: [{ parts: contentParts }],
+          generationConfig: { temperature: 0.5, maxOutputTokens: 200 },
+        }),
       },
-      body: JSON.stringify({
-        model: image ? "gpt-4o" : "gpt-4o-mini",
-        temperature: 0.5,
-        max_tokens: 200,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: contentParts },
-        ],
-      }),
-    });
+    );
 
     if (!response.ok) {
       const text = await response.text();
-      console.error("[brief] OpenAI error:", response.status, text);
+      console.error("[brief] Gemini error:", response.status, text);
       // Degrade gracefully
       return NextResponse.json({ brief: prompt ?? "A 3D object." });
     }
 
     const data = await response.json();
-    const brief = data.choices?.[0]?.message?.content?.trim() ?? prompt ?? "A 3D object.";
+    const brief =
+      (data.candidates?.[0]?.content?.parts ?? [])
+        .map((p: { text?: string }) => p.text ?? "")
+        .join("")
+        .trim() || prompt || "A 3D object.";
 
     return NextResponse.json({ brief });
   } catch (err) {

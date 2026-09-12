@@ -12,10 +12,10 @@
  * because design state is text-only.
  */
 
-export type LlmProviderName = "anthropic" | "openai" | "mock";
+export type LlmProviderName = "anthropic" | "gemini" | "mock";
 
 export interface LlmCallOptions {
-  /** Ask for strict JSON. Enforced natively on OpenAI, by prefill on Anthropic. */
+  /** Ask for strict JSON. Enforced natively on Gemini and Anthropic, by different mechanisms — see each provider's call function. */
   json?: boolean;
   model?: string;
   maxTokens?: number;
@@ -29,11 +29,11 @@ export interface LlmCallOptions {
  */
 export function resolveLlmProvider(): LlmProviderName {
   const explicit = process.env.LLM_PROVIDER?.trim().toLowerCase();
-  if (explicit === "anthropic" || explicit === "openai" || explicit === "mock") {
+  if (explicit === "anthropic" || explicit === "gemini" || explicit === "mock") {
     return explicit;
   }
   if (process.env.ANTHROPIC_API_KEY) return "anthropic";
-  if (process.env.OPENAI_API_KEY) return "openai";
+  if (process.env.GEMINI_API_KEY) return "gemini";
   return "mock";
 }
 
@@ -96,44 +96,54 @@ async function callAnthropic(
   }
 }
 
-// ── OpenAI ──
+// ── Gemini ──
 
-async function callOpenAI(
+const GEMINI_BASE =
+  process.env.GEMINI_BASE_URL ?? "https://generativelanguage.googleapis.com/v1beta";
+
+async function callGemini(
   system: string,
   user: string,
   opts: LlmCallOptions,
 ): Promise<string | null> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return null;
 
+  const model = opts.model ?? process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
+
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        "x-goog-api-key": apiKey,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: opts.model ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-        temperature: opts.temperature ?? 0.4,
-        max_tokens: opts.maxTokens ?? 1200,
-        ...(opts.json ? { response_format: { type: "json_object" } } : {}),
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ parts: [{ text: user }] }],
+        generationConfig: {
+          temperature: opts.temperature ?? 0.4,
+          maxOutputTokens: opts.maxTokens ?? 1200,
+          // Native JSON mode — unlike Anthropic, no brace-prefill trick needed.
+          ...(opts.json ? { responseMimeType: "application/json" } : {}),
+        },
       }),
     });
 
     if (!response.ok) {
-      console.error("[llm] OpenAI error:", response.status, await response.text());
+      console.error("[llm] Gemini error:", response.status, await response.text());
       return null;
     }
 
     const data = await response.json();
-    return data.choices?.[0]?.message?.content?.trim() ?? null;
+    const text = (data.candidates?.[0]?.content?.parts ?? [])
+      .map((p: { text?: string }) => p.text ?? "")
+      .join("")
+      .trim();
+
+    return text || null;
   } catch (err) {
-    console.error("[llm] OpenAI call failed:", err);
+    console.error("[llm] Gemini call failed:", err);
     return null;
   }
 }
@@ -148,8 +158,8 @@ export async function callLLM(
   switch (resolveLlmProvider()) {
     case "anthropic":
       return callAnthropic(system, user, opts);
-    case "openai":
-      return callOpenAI(system, user, opts);
+    case "gemini":
+      return callGemini(system, user, opts);
     case "mock":
       // Not an error: the deterministic paths in design-state.ts are the
       // intended behaviour with no provider configured.

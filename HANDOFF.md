@@ -86,15 +86,18 @@ anyone maintaining an IP that goes stale.
 
 `.env.local` (secrets, gitignored): `MESHY_API_KEY` (valid, real balance —
 each generation costs ~20 credits and ~30-50s at the current lite-tier
-settings), `OPENAI_API_KEY` (valid, drives the design-state LLM calls),
-`HF_API_TOKEN` (HuggingFace, unused unless `IMAGE_PROVIDER`/`MESH_PROVIDER` is
-set to it), `MESH_PROVIDER=meshy`, `IMAGE_PROVIDER` set.
+settings), `GEMINI_API_KEY` (valid, drives the design-state LLM calls —
+OpenAI was removed as an inference provider entirely, replaced with Gemini;
+see `src/lib/llm.ts`), `HF_API_TOKEN` (HuggingFace, unused unless
+`IMAGE_PROVIDER`/`MESH_PROVIDER` is set to it), `MESH_PROVIDER=meshy`,
+`IMAGE_PROVIDER` set.
 
 **No `ANTHROPIC_API_KEY` is present.** `LLM_PROVIDER` resolution in
 `src/lib/llm.ts` falls back to whichever key exists, so design-state calls
-currently run on OpenAI (`gpt-4o-mini`), not Anthropic, despite a collaborator
-having added Anthropic support. Not a bug — just worth knowing which model is
-actually writing the design-state prose if you're debugging its behavior.
+currently run on Gemini (`gemini-3.8-flash`), not Anthropic, despite a
+collaborator having added Anthropic support. Not a bug — just worth knowing
+which model is actually writing the design-state prose if you're debugging
+its behavior.
 
 **No `ZOO_API_KEY` should be present** — it was deliberately removed along with
 the provider. If you find one in `.env.local`, it's a leftover; the user was

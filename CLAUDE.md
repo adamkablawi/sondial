@@ -82,7 +82,7 @@ full room-create-join-chat flow round-tripped live over the public URL.
 - **`src/lib/design-state.ts`** — seed / evolve / classify / project-to-prompt.
   Every function degrades to a deterministic non-LLM path when no LLM is
   configured. The HTTP call itself lives in **`src/lib/llm.ts`**, which
-  dispatches on `LLM_PROVIDER` (`anthropic` | `openai` | `mock`, defaulting to
+  dispatches on `LLM_PROVIDER` (`anthropic` | `gemini` | `mock`, defaulting to
   whichever key is present) and **returns `null` rather than throwing** on any
   failure. That null is the contract the fallbacks rest on — preserve it.
 - **`server/worker.ts`** — concurrency pinned to **1** so requests apply in a

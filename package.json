@@ -10,7 +10,9 @@
     "worker": "tsx worker/index.ts",
     "worker:dev": "tsx watch worker/index.ts",
     "typecheck": "tsc --noEmit",
-    "verify:grok": "tsx scripts/verify-grok.ts"
+    "verify:grok": "tsx scripts/verify-grok.ts",
+    "verify:llm": "tsx scripts/verify-llm.ts",
+    "verify:supabase": "tsx scripts/verify-supabase.ts"
   },
   "dependencies": {
     "@google/model-viewer": "^4.3.1",

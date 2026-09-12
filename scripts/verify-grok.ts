@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../src/lib/load-env";
 
 /**
  * Verifies what the current xAI key can actually reach.

@@ -2,6 +2,7 @@ import { MockMeshProvider } from "./mesh-generation/mock-provider";
 import { MeshyProvider } from "./mesh-generation/meshy-provider";
 import { MockLlmProvider } from "./llm/mock-provider";
 import { GrokProvider } from "./llm/grok-provider";
+import { AnthropicProvider } from "./llm/anthropic-provider";
 
 import type { MeshGenerationProvider, LlmProvider } from "./types";
 
@@ -13,6 +14,7 @@ const meshProviders: Record<string, new () => MeshGenerationProvider> = {
 const llmProviders: Record<string, new () => LlmProvider> = {
   mock: MockLlmProvider,
   grok: GrokProvider,
+  anthropic: AnthropicProvider,
 };
 
 function createProvider<T>(map: Record<string, new () => T>, envKey: string, fallback: string): T {

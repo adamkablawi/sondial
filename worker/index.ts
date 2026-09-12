@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "@/lib/load-env";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getMeshProvider } from "@/providers";
 import { writeBrief, mergeBrief } from "@/lib/pipeline";

@@ -146,10 +146,12 @@ export class MeshyProvider implements MeshGenerationProvider {
     const status = statusMap[meshyStatus] ?? "pending";
 
     if (status === "complete" && data.model_urls) {
-      // Prefer OBJ (OpenSCAD-compatible), fall back to GLB, then FBX
-      const meshFileUrl = data.model_urls.obj || data.model_urls.glb || data.model_urls.fbx || "";
-      const format = data.model_urls.obj ? "obj" as const
-        : data.model_urls.glb ? "glb" as const
+      // Prefer GLB. For the same model Meshy returns ~12 MB as GLB against
+      // ~56 MB as OBJ, and the AR viewer wants GLB anyway; OBJ was only ever
+      // preferred here for an OpenSCAD path that no longer exists.
+      const meshFileUrl = data.model_urls.glb || data.model_urls.obj || data.model_urls.fbx || "";
+      const format = data.model_urls.glb ? "glb" as const
+        : data.model_urls.obj ? "obj" as const
         : "fbx" as const;
 
       return {

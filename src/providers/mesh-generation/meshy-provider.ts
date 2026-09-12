@@ -1,24 +1,14 @@
-import type {
-  MeshGenerationProvider,
-  MeshStatus,
-  JobStatus,
-} from "../types";
+import type { MeshGenerationProvider, JobStatus, MeshGenerationResult } from "../types";
 
 const MESHY_API_BASE = "https://api.meshy.ai";
 
-/** Formats we ask Meshy to produce. GLB drives the viewer, USDZ drives iOS AR. */
-const TARGET_FORMATS = ["glb", "usdz"];
-
 /**
- * Meshy AI provider.
+ * Meshy AI provider — supports both image-to-3D and text-to-3D generation.
  *
- * Two shapes of job, distinguished by the jobId prefix so that job state lives
- * entirely in the id — no server-side map required, which means a worker
- * restart never loses track of in-flight work:
+ * Image-to-3D: POST /openapi/v1/image-to-3d
+ * Text-to-3D:  POST /openapi/v2/text-to-3d (preview mode)
  *
- *   meshy-img-<task>   image-to-3D   — textured in a single call
- *   meshy-pre-<task>   text-to-3D    — preview, geometry only, needs refine
- *   meshy-ref-<task>   text-to-3D    — refine, textures applied
+ * Requires MESHY_API_KEY environment variable.
  */
 export class MeshyProvider implements MeshGenerationProvider {
   readonly name = "meshy";
@@ -28,7 +18,7 @@ export class MeshyProvider implements MeshGenerationProvider {
   constructor() {
     this.apiKey = process.env.MESHY_API_KEY ?? "";
     if (!this.apiKey) {
-      console.warn("[meshy] MESHY_API_KEY not set — calls will fail.");
+      console.warn("[MeshyProvider] MESHY_API_KEY not set — calls will fail.");
     }
   }
 
@@ -39,8 +29,40 @@ export class MeshyProvider implements MeshGenerationProvider {
     };
   }
 
-  private async post(path: string, body: unknown): Promise<string> {
-    const response = await fetch(`${MESHY_API_BASE}${path}`, {
+  async generateMesh(input: {
+    image?: string;      // base64 encoded image (for image-to-3D)
+    prompt?: string;     // text description (for text-to-3D)
+    format?: "obj" | "stl" | "glb";
+  }): Promise<{ jobId: string }> {
+    if (input.image) {
+      // Image provided — use image-to-3D, with optional text as texture guidance
+      return this.imageToMesh(input.image, input.prompt);
+    }
+    if (input.prompt) {
+      return this.textToMesh(input.prompt);
+    }
+    throw new Error("Either 'image' or 'prompt' is required for Meshy generation.");
+  }
+
+  private async imageToMesh(imageBase64: string, texturePrompt?: string): Promise<{ jobId: string }> {
+    // Meshy expects a data URI or a URL
+    const imageUrl = imageBase64.startsWith("data:")
+      ? imageBase64
+      : `data:image/png;base64,${imageBase64}`;
+
+    const body: Record<string, unknown> = {
+      image_url: imageUrl,
+      ai_model: "meshy-6",
+      topology: "triangle",
+      target_polycount: 30000,
+    };
+
+    // When text is provided alongside the image, pass it as texture guidance
+    if (texturePrompt) {
+      body.texture_prompt = texturePrompt;
+    }
+
+    const response = await fetch(`${MESHY_API_BASE}/openapi/v1/image-to-3d`, {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify(body),
@@ -48,94 +70,61 @@ export class MeshyProvider implements MeshGenerationProvider {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`Meshy ${path} failed: ${response.status} ${text}`);
+      throw new Error(`Meshy image-to-3D API error: ${response.status} ${text}`);
     }
 
     const data = await response.json();
-    if (!data.result) {
-      throw new Error(`Meshy ${path} returned no task id: ${JSON.stringify(data)}`);
-    }
-    return data.result as string;
+    const taskId = data.result;
+    return { jobId: `meshy-img-${taskId}` };
   }
 
-  async generateMesh(input: { image?: string; prompt?: string }): Promise<{ jobId: string }> {
-    if (input.image) {
-      // Image-to-3D textures in one pass (should_texture defaults true).
-      const imageUrl = input.image.startsWith("data:")
-        ? input.image
-        : `data:image/png;base64,${input.image}`;
-
-      const task = await this.post("/openapi/v1/image-to-3d", {
-        image_url: imageUrl,
-        ai_model: "meshy-6",
-        topology: "triangle",
-        target_polycount: 30000,
-        should_texture: true,
-        enable_pbr: true,
-        target_formats: TARGET_FORMATS,
-        ...(input.prompt ? { texture_prompt: input.prompt } : {}),
-      });
-      return { jobId: `meshy-img-${task}` };
-    }
-
-    if (input.prompt) {
-      // Text-to-3D preview: geometry only. Textures come from refineMesh().
-      const task = await this.post("/openapi/v2/text-to-3d", {
+  private async textToMesh(prompt: string): Promise<{ jobId: string }> {
+    const response = await fetch(`${MESHY_API_BASE}/openapi/v2/text-to-3d`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({
         mode: "preview",
-        prompt: input.prompt.slice(0, 800), // Meshy caps the prompt at 800 chars
+        prompt,
         ai_model: "meshy-6",
         topology: "triangle",
         target_polycount: 30000,
-        should_remesh: true,
-        target_formats: TARGET_FORMATS,
-      });
-      return { jobId: `meshy-pre-${task}` };
-    }
-
-    throw new Error("Meshy generation needs either 'image' or 'prompt'.");
-  }
-
-  async refineMesh(previewJobId: string): Promise<{ jobId: string }> {
-    if (!previewJobId.startsWith("meshy-pre-")) {
-      throw new Error(`refineMesh expects a preview job id, got "${previewJobId}"`);
-    }
-    const previewTaskId = previewJobId.slice("meshy-pre-".length);
-
-    const task = await this.post("/openapi/v2/text-to-3d", {
-      mode: "refine",
-      preview_task_id: previewTaskId,
-      enable_pbr: true,
-      target_formats: TARGET_FORMATS,
+      }),
     });
-    return { jobId: `meshy-ref-${task}` };
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Meshy text-to-3D API error: ${response.status} ${text}`);
+    }
+
+    const data = await response.json();
+    const taskId = data.result;
+    return { jobId: `meshy-txt-${taskId}` };
   }
 
-  needsRefine(jobId: string): boolean {
-    return jobId.startsWith("meshy-pre-");
-  }
-
-  private endpointFor(jobId: string): string {
-    if (jobId.startsWith("meshy-img-")) {
-      return `${MESHY_API_BASE}/openapi/v1/image-to-3d/${jobId.slice("meshy-img-".length)}`;
-    }
-    if (jobId.startsWith("meshy-pre-")) {
-      return `${MESHY_API_BASE}/openapi/v2/text-to-3d/${jobId.slice("meshy-pre-".length)}`;
-    }
-    if (jobId.startsWith("meshy-ref-")) {
-      return `${MESHY_API_BASE}/openapi/v2/text-to-3d/${jobId.slice("meshy-ref-".length)}`;
-    }
-    throw new Error(`Unrecognised Meshy job id: ${jobId}`);
-  }
-
-  async checkStatus(jobId: string): Promise<MeshStatus> {
+  async checkStatus(jobId: string): Promise<{
+    status: JobStatus;
+    progress?: number;
+    result?: MeshGenerationResult;
+    error?: string;
+  }> {
+    // Extract the actual Meshy task ID and determine endpoint
+    let taskId: string;
     let endpoint: string;
-    try {
-      endpoint = this.endpointFor(jobId);
-    } catch (err) {
-      return { status: "failed", error: (err as Error).message };
+
+    if (jobId.startsWith("meshy-img-")) {
+      taskId = jobId.slice("meshy-img-".length);
+      endpoint = `${MESHY_API_BASE}/openapi/v1/image-to-3d/${taskId}`;
+    } else if (jobId.startsWith("meshy-txt-")) {
+      taskId = jobId.slice("meshy-txt-".length);
+      endpoint = `${MESHY_API_BASE}/openapi/v2/text-to-3d/${taskId}`;
+    } else {
+      return { status: "failed", error: `Unknown Meshy job ID format: ${jobId}` };
     }
 
-    const response = await fetch(endpoint, { method: "GET", headers: this.headers() });
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: this.headers(),
+    });
 
     if (!response.ok) {
       const text = await response.text();
@@ -143,6 +132,8 @@ export class MeshyProvider implements MeshGenerationProvider {
     }
 
     const data = await response.json();
+    const meshyStatus: string = data.status; // PENDING, IN_PROGRESS, SUCCEEDED, FAILED, CANCELED
+    const progress: number = data.progress ?? 0;
 
     const statusMap: Record<string, JobStatus> = {
       PENDING: "pending",
@@ -151,32 +142,34 @@ export class MeshyProvider implements MeshGenerationProvider {
       FAILED: "failed",
       CANCELED: "failed",
     };
-    const status = statusMap[data.status as string] ?? "pending";
+
+    const status = statusMap[meshyStatus] ?? "pending";
+
+    if (status === "complete" && data.model_urls) {
+      // Prefer OBJ (OpenSCAD-compatible), fall back to GLB, then FBX
+      const meshFileUrl = data.model_urls.obj || data.model_urls.glb || data.model_urls.fbx || "";
+      const format = data.model_urls.obj ? "obj" as const
+        : data.model_urls.glb ? "glb" as const
+        : "fbx" as const;
+
+      return {
+        status: "complete",
+        progress: 100,
+        result: {
+          meshFileUrl,
+          format,
+          metadata: {
+            vertices: data.vertex_count,
+            faces: data.face_count,
+          },
+        },
+      };
+    }
 
     if (status === "failed") {
       return { status: "failed", error: data.task_error?.message ?? "Meshy task failed" };
     }
 
-    if (status === "complete") {
-      const urls = data.model_urls ?? {};
-      if (!urls.glb) {
-        return {
-          status: "failed",
-          error: "Meshy finished but returned no GLB. Check target_formats.",
-        };
-      }
-      return {
-        status: "complete",
-        progress: 100,
-        result: {
-          glbUrl: urls.glb,
-          usdzUrl: urls.usdz,
-          thumbnailUrl: data.thumbnail_url,
-          metadata: { vertices: data.vertex_count, faces: data.face_count },
-        },
-      };
-    }
-
-    return { status, progress: data.progress ?? 0 };
+    return { status, progress };
   }
 }

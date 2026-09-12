@@ -1,107 +1,85 @@
 @import "tailwindcss";
 
-/*
-  Prompt-to-AR Studio — cyanotype workshop.
-
-  Design thesis: the only colours in the interface are the object and the
-  people. Everything else is monochrome blueprint. State is carried by weight
-  and opacity of bone on prussian, never by a decorative accent hue.
-*/
-
 :root {
-  --ground:      #0e2030;  /* prussian — the drafting-paper ground */
-  --ground-deep: #081520;  /* wells, insets, the viewer floor */
-  --ground-up:   #13293a;  /* raised surfaces */
-  --rule:        #23455e;  /* hairlines, borders */
-  --rule-soft:   #1a3448;
-
-  --bone:        #ede6da;  /* primary text — warm, against the cool ground */
-  --bone-dim:    #a9bcc9;  /* secondary */
-  --bone-faint:  #6d8798;  /* tertiary, placeholders */
-
-  --rust:        #c4704f;  /* failure only. Appears nowhere else. */
-
-  --shell: 1200px;
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --gradient-start: #0a0a0a;
+  --gradient-mid: #141414;
+  --gradient-end: #0d0d0d;
+  --glow-color: rgba(255, 255, 255, 0.08);
+  --glow-color-soft: rgba(255, 255, 255, 0.05);
 }
 
-@theme inline {
-  --color-ground: var(--ground);
-  --color-ground-deep: var(--ground-deep);
-  --color-ground-up: var(--ground-up);
-  --color-rule: var(--rule);
-  --color-rule-soft: var(--rule-soft);
-  --color-bone: var(--bone);
-  --color-bone-dim: var(--bone-dim);
-  --color-bone-faint: var(--bone-faint);
-  --color-rust: var(--rust);
+/* Tailwind's type, spacing and the fixed panel widths are all rem-based, so the
+   root size is the single knob for overall UI scale. */
+html {
+  font-size: 14px;
 }
-
-html, body { height: 100%; }
 
 body {
-  background: var(--ground);
-  color: var(--bone);
-  /* A drafting grid, barely there — it gives the ground a sense of scale. */
+  background: var(--background);
+  color: var(--foreground);
+  min-height: 100vh;
   background-image:
-    linear-gradient(var(--rule-soft) 1px, transparent 1px),
-    linear-gradient(90deg, var(--rule-soft) 1px, transparent 1px);
-  background-size: 64px 64px;
-  background-position: -1px -1px;
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255, 255, 255, 0.03), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 50%, rgba(255, 255, 255, 0.02), transparent),
+    radial-gradient(ellipse 60% 40% at 0% 80%, rgba(255, 255, 255, 0.02), transparent),
+    linear-gradient(180deg, var(--gradient-start) 0%, var(--gradient-mid) 45%, var(--gradient-end) 100%);
+  background-attachment: fixed;
 }
 
-/* Keyboard focus is always visible, and always bone. */
-:focus-visible {
-  outline: 2px solid var(--bone);
-  outline-offset: 2px;
-  border-radius: 2px;
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px var(--glow-color), 0 0 40px var(--glow-color-soft); opacity: 0.6; }
+  50% { box-shadow: 0 0 28px var(--glow-color), 0 0 56px var(--glow-color-soft); opacity: 1; }
 }
 
-::selection { background: var(--bone); color: var(--ground); }
-
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 0; }
-::-webkit-scrollbar-thumb:hover { background: var(--bone-faint); }
-
-/*
-  The one orchestrated motion in the product: a survey line sweeping the stage
-  while an object is being made. It answers a real event, so it earns its place.
-*/
-@keyframes survey {
-  0%   { transform: translateY(-10%); opacity: 0; }
-  12%  { opacity: 1; }
-  88%  { opacity: 1; }
-  100% { transform: translateY(1000%); opacity: 0; }
-}
-.survey-line {
-  animation: survey 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+@keyframes shimmer {
+  0% { background-position: -50% 0; }
+  100% { background-position: 150% 0; }
 }
 
-@keyframes breathe {
-  0%, 100% { opacity: 0.35; }
-  50%      { opacity: 0.9; }
-}
-.breathe { animation: breathe 2.4s ease-in-out infinite; }
-
-/* Model swaps crossfade so a new version never pops into place. */
-@keyframes rise {
-  from { opacity: 0; transform: scale(0.985); }
-  to   { opacity: 1; transform: scale(1); }
-}
-.rise { animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-  }
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-/* model-viewer needs explicit sizing and inherits none of our theme. */
-model-viewer {
-  width: 100%;
-  height: 100%;
-  --poster-color: transparent;
-  background-color: transparent;
+.animate-pulse-glow {
+  animation: pulse-glow 2.5s ease-in-out infinite;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.6s ease-out forwards;
+}
+
+/* Shimmer only on hover — default state is plain button, no flare */
+.btn-shimmer:hover {
+  background-size: 200% 100%;
+  background-position: -50% 0;
+  background-image: linear-gradient(
+    110deg,
+    transparent 0%,
+    transparent 28%,
+    rgba(255, 255, 255, 0.08) 38%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.08) 62%,
+    transparent 72%,
+    transparent 100%
+  );
+  animation: shimmer 0.32s ease-out forwards;
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
 }

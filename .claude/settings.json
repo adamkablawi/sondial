@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.meshy.ai)",
+      "Bash(npx tsc:*)",
+      "Bash(./node_modules/.bin/tsc:*)",
+      "Bash(npx next lint:*)",
+      "Bash(node_modules/.bin/tsc.cmd:*)",
+      "Read(//c/Program Files/**)",
+      "Bash(\"/c/Program Files/OpenSCAD/openscad.com\" --version)",
+      "Bash(\"C:\\\\Program Files\\\\OpenSCAD\\\\openscad.com\" --version)",
+      "Bash(\"C:\\\\Program Files\\\\OpenSCAD\\\\openscad.exe\" --version)",
+      "Bash(cmd.exe /c '\"\"C:\\\\Program Files\\\\OpenSCAD\\\\openscad.com\"\" --version')",
+      "Bash(cmd.exe /c \"\"\"C:\\\\Program Files\\\\OpenSCAD\\\\openscad.com\"\" --version\")",
+      "Bash(cmd.exe /c \"dir \"\"C:\\\\Program Files\\\\OpenSCAD\\\\openscad*\"\"\")"
+    ]
+  }
+}

@@ -241,11 +241,17 @@ export default function RoomPage() {
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-72 shrink-0 overflow-hidden border-r border-neutral-800 bg-neutral-950">
+        {/* Below md this whole design-state pane is dropped — a phone (the
+            device the AR handoff QR targets) gets chat-and-AR, not a
+            three-column desktop layout squeezed into a small screen. */}
+        <aside className="hidden w-72 shrink-0 overflow-hidden border-r border-neutral-800 bg-neutral-950 md:block">
           <DesignStatePanel />
         </aside>
 
-        <section className="flex min-w-0 flex-1 flex-col">
+        {/* Same cutoff for the embedded 3D viewer + timeline: a phone reaches
+            the model through ARLauncher's inline banner in the chat pane
+            below instead. */}
+        <section className="hidden min-w-0 flex-1 flex-col md:flex">
           {/* overflow-hidden: ARLauncher's AR/QR overlay is absolutely
               positioned against this box, anchored to its bottom edge — which
               sits exactly where VersionTimeline begins. Without a hard
@@ -291,8 +297,26 @@ export default function RoomPage() {
           <VersionTimeline />
         </section>
 
-        <aside className="flex w-80 shrink-0 flex-col border-l border-neutral-800 bg-neutral-950">
-          <ChatPanel />
+        <aside className="flex w-full flex-1 flex-col bg-neutral-950 md:w-80 md:flex-none md:shrink-0 md:border-l md:border-neutral-800">
+          {/* shrink-0: takes its natural height, so it doesn't fight the chat
+              pane below for space. md:hidden: the desktop overlay variant
+              already covers this inside the embedded viewer above, once one
+              exists. */}
+          <div className="shrink-0 md:hidden">
+            <ARLauncher
+              variant="inline"
+              meshUrl={activeVersion?.meshUrl ?? null}
+              meshFormat={activeVersion?.meshFormat ?? null}
+              alt={`${roomName ?? "Object"}, version ${activeVersion?.versionNumber ?? "?"}`}
+            />
+          </div>
+          {/* ChatPanel's own root is h-full, which needs a container with a
+              definite height to fill — min-h-0 flex-1 gives it exactly the
+              space left over after the banner above, rather than 100% of the
+              aside (which would overlap that banner). */}
+          <div className="min-h-0 flex-1">
+            <ChatPanel />
+          </div>
         </aside>
       </div>
     </main>

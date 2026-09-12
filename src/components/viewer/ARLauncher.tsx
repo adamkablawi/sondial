@@ -13,6 +13,13 @@ interface ARLauncherProps {
    */
   usdzUrl?: string | null;
   alt: string;
+  /**
+   * "overlay" (default): a floating corner control over the desktop 3D
+   * viewer. "inline": a normal-flow banner for the mobile layout, which skips
+   * the embedded viewer entirely — same AR detection and launch logic either
+   * way, only the container and button styling differ.
+   */
+  variant?: "overlay" | "inline";
 }
 
 /**
@@ -47,7 +54,13 @@ function isAppleMobile() {
  *     with three's USDZExporter and Quick Look is handed a blob. If that
  *     conversion fails the QR handoff stays available.
  */
-export function ARLauncher({ meshUrl, meshFormat, usdzUrl, alt }: ARLauncherProps) {
+export function ARLauncher({
+  meshUrl,
+  meshFormat,
+  usdzUrl,
+  alt,
+  variant = "overlay",
+}: ARLauncherProps) {
   const ref = useRef<HTMLElement & { canActivateAR?: boolean; activateAR?: () => void }>(null);
   const [loaded, setLoaded] = useState(false);
   const [canAR, setCanAR] = useState(false);
@@ -170,6 +183,8 @@ export function ARLauncher({ meshUrl, meshFormat, usdzUrl, alt }: ARLauncherProp
   // Nothing to place: no mesh, or a format the platform viewers won't take.
   if (!arSrc) return null;
 
+  const isInline = variant === "inline";
+
   return (
     <>
       {loaded && (
@@ -194,8 +209,16 @@ export function ARLauncher({ meshUrl, meshFormat, usdzUrl, alt }: ARLauncherProp
         />
       )}
 
-      <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-2">
-        {showQR && roomUrl && (
+      <div
+        className={
+          isInline
+            ? "flex flex-col gap-2 border-b border-neutral-800 p-3"
+            : "absolute bottom-4 right-4 z-10 flex flex-col items-end gap-2"
+        }
+      >
+        {/* The QR handoff opens this same room on a phone — meaningless when
+            inline is already rendering on the phone that scanned it. */}
+        {!isInline && showQR && roomUrl && (
           <div className="rounded-lg border border-neutral-700 bg-neutral-900/95 p-3 backdrop-blur-sm">
             <HandoffQR url={roomUrl} />
           </div>
@@ -205,7 +228,11 @@ export function ARLauncher({ meshUrl, meshFormat, usdzUrl, alt }: ARLauncherProp
           <button
             type="button"
             onClick={() => ref.current?.activateAR?.()}
-            className="rounded-lg border border-neutral-600 bg-neutral-900/90 px-4 py-2 text-xs font-medium text-neutral-100 backdrop-blur-sm transition-colors hover:border-neutral-400"
+            className={
+              isInline
+                ? "w-full rounded-lg border border-neutral-600 bg-neutral-900 px-4 py-3 text-sm font-medium text-neutral-100 transition-colors hover:border-neutral-400"
+                : "rounded-lg border border-neutral-600 bg-neutral-900/90 px-4 py-2 text-xs font-medium text-neutral-100 backdrop-blur-sm transition-colors hover:border-neutral-400"
+            }
           >
             Place it in the room
           </button>
@@ -213,10 +240,18 @@ export function ARLauncher({ meshUrl, meshFormat, usdzUrl, alt }: ARLauncherProp
           <button
             type="button"
             disabled
-            className="rounded-lg border border-neutral-700 bg-neutral-900/90 px-4 py-2 text-xs text-neutral-400 backdrop-blur-sm"
+            className={
+              isInline
+                ? "w-full rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm text-neutral-400"
+                : "rounded-lg border border-neutral-700 bg-neutral-900/90 px-4 py-2 text-xs text-neutral-400 backdrop-blur-sm"
+            }
           >
             Preparing AR...
           </button>
+        ) : isInline ? (
+          <p className="px-1 text-xs text-neutral-500">
+            AR isn&rsquo;t available on this device yet.
+          </p>
         ) : (
           <button
             type="button"

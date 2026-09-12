@@ -1,5 +1,5 @@
 import "./env";
-import { Worker } from "bullmq";
+import { UnrecoverableError, Worker } from "bullmq";
 import { db } from "../src/lib/db";
 import { createQueueConnection } from "../src/lib/redis";
 import { GENERATION_QUEUE, type GenerationJobPayload } from "../src/lib/queue";
@@ -91,6 +91,25 @@ function proxied(url: string): string {
   return url.startsWith("http") ? `/api/proxy?url=${encodeURIComponent(url)}` : url;
 }
 
+/** Errors that a retry cannot fix: credentials, permissions, malformed requests. */
+function isPermanentFailure(message: string): boolean {
+  return (
+    /\b(400|401|402|403|404)\b/.test(message) ||
+    /invalid api key|unauthorized|forbidden|payment required/i.test(message)
+  );
+}
+
+/** Turns a vendor error into something a room participant can act on. */
+function explainFailure(raw: string): string {
+  if (/\b401\b|invalid api key|unauthorized/i.test(raw)) {
+    return `Generation failed: the ${meshProvider.name} API key was rejected. Set a valid key in .env.local and restart, or run with MESH_PROVIDER=mock to keep iterating without one.`;
+  }
+  if (/\b402\b|payment required|quota|credit/i.test(raw)) {
+    return `Generation failed: the ${meshProvider.name} account is out of credit or quota.`;
+  }
+  return `Generation failed: ${raw}`;
+}
+
 // ── Core ──
 
 async function processJob(payload: GenerationJobPayload): Promise<void> {
@@ -176,38 +195,25 @@ async function processJob(payload: GenerationJobPayload): Promise<void> {
 
     const prompt = await compileMeshyPrompt(nextState);
 
-    // ── New immutable version, created up-front so the room sees it generating.
-    const max = await db.objectVersion.aggregate({
-      where: { projectId: record.projectId },
-      _max: { versionNumber: true },
-    });
-
-    const version = await db.objectVersion.create({
-      data: {
-        projectId: record.projectId,
-        parentId: baseVersion.id,
-        versionNumber: (max._max.versionNumber ?? 0) + 1,
-        status: "GENERATING",
-        createdById: record.authorId,
-        label: record.instruction.slice(0, 80),
-      },
-      include: { createdBy: true },
-    });
-
     await db.generationJob.update({
       where: { id: jobId },
-      data: { strategy, compiledPrompt: prompt, resultVersionId: version.id },
+      data: { strategy, compiledPrompt: prompt },
     });
-    await emitVersion(version.id, roomSlug);
     await emitJob(jobId, roomSlug);
 
     // ── Generation.
+    // Nothing touches the version DAG until the vendor actually returns a mesh.
+    // A version represents a real object state, so a failed attempt must not
+    // leave one behind — the attempt itself is recorded on GenerationJob, and
+    // the timeline shows in-flight work from the job instead.
+    //
     // NOTE: `strategy` is classified and recorded, but both paths currently run
     // a full regeneration. Wiring RETEXTURE to Meshy's retexture endpoint (the
     // only path that preserves geometry exactly) is the next step.
     const { jobId: meshJobId } = await meshProvider.generateMesh({ prompt });
 
     const startedAt = Date.now();
+    let lastProgress = -1;
     let result: { meshFileUrl: string; format: string } | null = null;
 
     while (!result) {
@@ -221,7 +227,8 @@ async function processJob(payload: GenerationJobPayload): Promise<void> {
       if (status.status === "failed") {
         throw new Error(status.error ?? "Mesh generation failed");
       }
-      if (typeof status.progress === "number" && status.progress !== record.progress) {
+      if (typeof status.progress === "number" && status.progress !== lastProgress) {
+        lastProgress = status.progress;
         await db.generationJob.update({
           where: { id: jobId },
           data: { progress: status.progress },
@@ -233,53 +240,68 @@ async function processJob(payload: GenerationJobPayload): Promise<void> {
       }
     }
 
-    // ── Commit: version becomes immutable, its design state is written
-    // alongside it, and it becomes the project head.
-    await db.$transaction([
-      db.objectVersion.update({
-        where: { id: version.id },
+    // ── Commit: the version, its design state, the new head, and the job
+    // outcome all land together or not at all.
+    const version = await db.$transaction(async (tx) => {
+      const max = await tx.objectVersion.aggregate({
+        where: { projectId: record.projectId },
+        _max: { versionNumber: true },
+      });
+
+      const created = await tx.objectVersion.create({
         data: {
+          projectId: record.projectId,
+          parentId: baseVersion.id,
+          versionNumber: (max._max.versionNumber ?? 0) + 1,
           status: "COMPLETE",
+          label: record.instruction.slice(0, 80),
+          createdById: record.authorId,
           meshUrl: proxied(result.meshFileUrl),
           meshFormat: result.format,
           meshyTaskId: meshJobId,
+          description: {
+            create: { ...nextState, raw: renderDesignState(nextState) },
+          },
         },
-      }),
-      db.versionDescription.create({
-        data: { versionId: version.id, ...nextState, raw: renderDesignState(nextState) },
-      }),
-      db.project.update({
+      });
+
+      await tx.project.update({
         where: { id: record.projectId },
-        data: { headVersionId: version.id },
-      }),
-      db.generationJob.update({
+        data: { headVersionId: created.id },
+      });
+
+      await tx.generationJob.update({
         where: { id: jobId },
-        data: { status: "COMPLETE", progress: 100, finishedAt: new Date() },
-      }),
-    ]);
+        data: {
+          status: "COMPLETE",
+          progress: 100,
+          finishedAt: new Date(),
+          resultVersionId: created.id,
+        },
+      });
+
+      return created;
+    });
 
     await emitVersion(version.id, roomSlug);
     await emitJob(jobId, roomSlug);
     await publishRoomEvent(roomSlug, { type: "head", headVersionId: version.id });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Generation failed";
-    console.error("[worker] job failed:", jobId, message);
+    const raw = err instanceof Error ? err.message : "Generation failed";
+    const message = explainFailure(raw);
+    console.error("[worker] job failed:", jobId, raw);
 
-    const failed = await db.generationJob.update({
+    await db.generationJob.update({
       where: { id: jobId },
       data: { status: "FAILED", error: message, finishedAt: new Date() },
     });
 
-    if (failed.resultVersionId) {
-      await db.objectVersion.update({
-        where: { id: failed.resultVersionId },
-        data: { status: "FAILED" },
-      });
-      await emitVersion(failed.resultVersionId, roomSlug);
-    }
-
     await emitJob(jobId, roomSlug);
-    await systemMessage(record.roomId, roomSlug, `Generation failed: ${message}`);
+    await systemMessage(record.roomId, roomSlug, message);
+
+    // Bad credentials and malformed requests fail identically on every attempt,
+    // so retrying only posts the same failure to the room twice.
+    if (isPermanentFailure(raw)) throw new UnrecoverableError(message);
     throw err;
   }
 }

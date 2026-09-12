@@ -14,11 +14,15 @@ const STATUS_STYLES: Record<VersionDTO["status"], string> = {
 
 export function VersionTimeline() {
   const versions = useRoomStore((s) => s.versions);
+  const jobs = useRoomStore((s) => s.jobs);
   const headVersionId = useRoomStore((s) => s.headVersionId);
   const selectedVersionId = useRoomStore((s) => s.selectedVersionId);
   const selectVersion = useRoomStore((s) => s.selectVersion);
 
   const activeId = selectedVersionId ?? headVersionId;
+  // A version row only exists once generation succeeds, so in-flight work is
+  // shown from the job itself.
+  const pending = jobs.filter((j) => j.status === "QUEUED" || j.status === "RUNNING");
 
   return (
     <div className="border-t border-neutral-800 bg-neutral-950">
@@ -90,7 +94,36 @@ export function VersionTimeline() {
           );
         })}
 
-        {versions.length === 0 && (
+        {pending.map((job) => (
+          <div
+            key={job.id}
+            title={job.instruction}
+            className="shrink-0 rounded-lg border border-dashed border-blue-500/50 bg-blue-500/5 px-3 py-2"
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" />
+              <span className="text-xs font-semibold text-blue-300">
+                {job.status === "QUEUED" ? "queued" : `${job.progress}%`}
+              </span>
+            </div>
+            <div className="mt-0.5 max-w-[140px] truncate text-[10px] text-blue-300/60">
+              {job.instruction}
+            </div>
+            {job.author && (
+              <div className="mt-1 flex items-center gap-1">
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ backgroundColor: job.author.color }}
+                />
+                <span className="text-[10px] text-blue-300/50">
+                  {job.author.displayName}
+                </span>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {versions.length === 0 && pending.length === 0 && (
           <p className="py-2 text-xs text-neutral-600">No versions yet.</p>
         )}
       </div>

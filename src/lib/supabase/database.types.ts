@@ -26,7 +26,8 @@ export interface Database {
     Functions: {
       claim_next_version: {
         Args: Record<never, never>;
-        Returns: Version;
+        // SETOF: zero rows when the queue is empty.
+        Returns: Version[];
       };
       requeue_stuck_versions: {
         Args: { max_age_minutes?: number };

@@ -65,8 +65,14 @@ alter table rooms    replica identity full;
 -- would both pick up the same row and burn Meshy credits twice.
 -- SKIP LOCKED makes the claim exclusive.
 
-create or replace function claim_next_version()
-returns versions
+-- Returns SETOF, not a bare composite, so that an empty queue is zero rows.
+-- A function returning a plain composite renders a NULL result over PostgREST
+-- as an object of all-null fields, which a caller cannot distinguish from a
+-- real claim. Zero rows is unambiguous.
+drop function if exists claim_next_version();
+
+create function claim_next_version()
+returns setof versions
 language plpgsql
 security definer
 set search_path = public
@@ -79,14 +85,13 @@ begin
    for update skip locked
    limit 1;
 
-  if not found then return null; end if;
+  if not found then return; end if;
 
+  return query
   update versions
      set status = 'briefing', claimed_at = now(), updated_at = now()
    where id = v.id
-   returning * into v;
-
-  return v;
+   returning *;
 end $$;
 
 revoke execute on function claim_next_version() from anon, authenticated;

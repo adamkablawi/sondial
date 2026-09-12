@@ -211,8 +211,11 @@ async function claim(): Promise<Version | null> {
     log("! claim failed:", error.message);
     return null;
   }
-  // The RPC returns a bare row, or null when the queue is empty.
-  return (Array.isArray(data) ? data[0] : data) ?? null;
+  // An empty queue must never look like a claim. The RPC returns zero rows,
+  // but an older deployment of it returns a composite whose fields are all
+  // null — indistinguishable from a row until you look for the id.
+  const row = (Array.isArray(data) ? data[0] : data) as Version | null | undefined;
+  return row?.id ? row : null;
 }
 
 async function sweep(): Promise<void> {

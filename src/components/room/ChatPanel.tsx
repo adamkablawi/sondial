@@ -182,7 +182,10 @@ export function ChatPanel() {
             placeholder={
               isInstruction ? "e.g. make the handle 15% thicker" : "Say something..."
             }
-            className="max-h-[120px] flex-1 resize-none bg-transparent text-sm text-neutral-200 placeholder-neutral-500 outline-none"
+            // py-1.5 + leading-5 makes a single line exactly as tall as the send
+            // button, so bottom-aligning the row reads as centred. The button
+            // still sits at the bottom once the text wraps.
+            className="block max-h-[120px] flex-1 resize-none bg-transparent py-1.5 text-sm leading-5 text-neutral-200 placeholder-neutral-500 outline-none"
           />
           <button
             type="button"

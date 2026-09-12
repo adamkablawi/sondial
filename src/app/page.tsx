@@ -85,7 +85,10 @@ export default function HomePage() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
+    // Top-aligned rather than centred: with the room list the page can exceed
+    // the viewport, and centred overflow pushes the heading past the top edge
+    // where it cannot be scrolled back into view.
+    <main className="flex min-h-screen justify-center px-6 pb-16 pt-20">
       <div className="w-full max-w-xl space-y-8">
         <div className="text-center">
           <h1 className="text-5xl font-bold tracking-tight text-white">Sondial</h1>

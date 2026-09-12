@@ -246,7 +246,12 @@ export default function RoomPage() {
         </aside>
 
         <section className="flex min-w-0 flex-1 flex-col">
-          <div className="relative min-h-0 flex-1">
+          {/* overflow-hidden: ARLauncher's AR/QR overlay is absolutely
+              positioned against this box, anchored to its bottom edge — which
+              sits exactly where VersionTimeline begins. Without a hard
+              boundary here, that overlay can bleed into the timeline below
+              instead of staying inside the viewer. */}
+          <div className="relative min-h-0 flex-1 overflow-hidden">
             {activeVersion?.meshUrl ? (
               <>
                 <ModelViewer

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ModelViewer } from "@/components/viewer/ModelViewer";
+import { ARLauncher } from "@/components/viewer/ARLauncher";
 import { ChatPanel } from "@/components/room/ChatPanel";
 import { DesignStatePanel } from "@/components/room/DesignStatePanel";
 import { PresenceBar } from "@/components/room/PresenceBar";
@@ -243,12 +244,19 @@ export default function RoomPage() {
         <section className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
             {activeVersion?.meshUrl ? (
-              <ModelViewer
-                modelUrl={activeVersion.meshUrl}
-                modelFormat={asMeshFormat(activeVersion.meshFormat)}
-                selectedPartId={null}
-                onPartSelect={() => {}}
-              />
+              <>
+                <ModelViewer
+                  modelUrl={activeVersion.meshUrl}
+                  modelFormat={asMeshFormat(activeVersion.meshFormat)}
+                  selectedPartId={null}
+                  onPartSelect={() => {}}
+                />
+                <ARLauncher
+                  meshUrl={activeVersion.meshUrl}
+                  meshFormat={activeVersion.meshFormat}
+                  alt={`${roomName ?? "Object"}, version ${activeVersion.versionNumber}`}
+                />
+              </>
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-center">
                 <div className="max-w-xs">

@@ -34,8 +34,11 @@ export class MockMeshProvider implements MeshGenerationProvider {
         status: "complete",
         progress: 100,
         result: {
-          meshFileUrl: "/samples/cube.obj",
-          format: "obj",
+          // GLB, not OBJ, because that is what Meshy returns — and because
+          // the AR launcher only accepts glTF, so this keeps the AR path
+          // exercisable with no API keys.
+          meshFileUrl: "/samples/mock.glb",
+          format: "glb",
         },
       };
     }

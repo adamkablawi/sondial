@@ -38,8 +38,6 @@ export interface VersionDTO {
   status: "GENERATING" | "COMPLETE" | "FAILED" | "APPROVED" | "REJECTED" | "SUPERSEDED";
   meshUrl: string | null;
   meshFormat: string | null;
-  /// Set when a source-based provider rendered a still for this version.
-  previewUrl: string | null;
   /// Parametric CAD source, when the provider produced it.
   cadSource: string | null;
   cadSourcePath: string | null;

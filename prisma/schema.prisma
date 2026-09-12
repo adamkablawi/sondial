@@ -134,9 +134,6 @@ model ObjectVersion {
   /// is what makes changes precise instead of a fresh guess.
   cadSource     String?
   cadSourcePath String?
-  /// Vendor-rendered still, served from /api/versions/{id}/preview.
-  previewImage    Bytes?
-  previewMimetype String?
 
   createdById String?
   createdAt   DateTime @default(now())

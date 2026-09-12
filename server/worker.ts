@@ -3,7 +3,7 @@ import { UnrecoverableError, Worker } from "bullmq";
 import { db } from "../src/lib/db";
 import { createQueueConnection } from "../src/lib/redis";
 import { GENERATION_QUEUE, type GenerationJobPayload } from "../src/lib/queue";
-import { cadProvider } from "../src/providers/cad";
+import { meshProvider } from "../src/providers";
 import {
   classifyInstruction,
   compileMeshyPrompt,
@@ -25,6 +25,9 @@ import {
  * Concurrency is pinned to 1 so requests apply in a defined order and version
  * numbering stays race-free — the ordering guarantee the queue exists to provide.
  */
+
+const POLL_INTERVAL_MS = 2000;
+const POLL_TIMEOUT_MS = 10 * 60 * 1000;
 
 // ── Broadcast helpers ──
 
@@ -99,10 +102,10 @@ function isPermanentFailure(message: string): boolean {
 /** Turns a vendor error into something a room participant can act on. */
 function explainFailure(raw: string): string {
   if (/\b401\b|invalid api key|unauthorized/i.test(raw)) {
-    return `Generation failed: the ${cadProvider.name} API key was rejected. Set a valid key in .env.local and restart, or run with MESH_PROVIDER=mock to keep iterating without one.`;
+    return `Generation failed: the ${meshProvider.name} API key was rejected. Set a valid key in .env.local and restart, or run with MESH_PROVIDER=mock to keep iterating without one.`;
   }
   if (/\b402\b|payment required|quota|credit/i.test(raw)) {
-    return `Generation failed: the ${cadProvider.name} account is out of credit or quota.`;
+    return `Generation failed: the ${meshProvider.name} account is out of credit or quota.`;
   }
   return `Generation failed: ${raw}`;
 }
@@ -204,23 +207,40 @@ async function processJob(payload: GenerationJobPayload): Promise<void> {
     // must not leave one behind — the attempt is recorded on GenerationJob, and
     // the timeline shows in-flight work from the job instead.
     //
-    // Source-based providers get the base version's CAD source, which is what
-    // makes an edit precise rather than a fresh interpretation of the brief.
-    const result = await cadProvider.generate({
-      instruction: record.instruction,
+    // `previousSource` lets a source-based provider (Zoo) edit the base
+    // version's KCL directly, which is what makes an edit surgical. Mesh
+    // providers ignore it and regenerate from the prompt.
+    const { jobId: meshJobId } = await meshProvider.generateMesh({
       prompt,
-      previousSource: baseVersion.cadSource,
-      onProgress: async (percent) => {
-        await db.generationJob.update({
-          where: { id: jobId },
-          data: { progress: percent },
-        });
-        await emitJob(jobId, roomSlug);
-      },
+      previousSource: baseVersion.cadSource ?? undefined,
     });
 
-    if (!result.source && !result.meshUrl) {
-      throw new Error(`${cadProvider.name} returned neither CAD source nor a mesh.`);
+    const startedAt = Date.now();
+    let lastProgress = -1;
+    let result: Awaited<ReturnType<typeof meshProvider.checkStatus>>["result"] | null = null;
+
+    while (!result) {
+      if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+        throw new Error(`Generation timed out after ${POLL_TIMEOUT_MS / 1000}s`);
+      }
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+
+      const status = await meshProvider.checkStatus(meshJobId);
+
+      if (status.status === "failed") {
+        throw new Error(status.error ?? "Generation failed");
+      }
+      if (typeof status.progress === "number" && status.progress !== lastProgress) {
+        lastProgress = status.progress;
+        await db.generationJob.update({
+          where: { id: jobId },
+          data: { progress: status.progress },
+        });
+        await emitJob(jobId, roomSlug);
+      }
+      if (status.status === "complete" && status.result) {
+        result = status.result;
+      }
     }
 
     // ── Commit: the version, its design state, the new head, and the job
@@ -239,13 +259,11 @@ async function processJob(payload: GenerationJobPayload): Promise<void> {
           status: "COMPLETE",
           label: record.instruction.slice(0, 80),
           createdById: record.authorId,
-          meshUrl: result.meshUrl ? proxied(result.meshUrl) : null,
-          meshFormat: result.meshFormat ?? null,
-          meshyTaskId: result.externalId ?? null,
+          meshUrl: proxied(result.meshFileUrl),
+          meshFormat: result.format,
+          meshyTaskId: meshJobId,
           cadSource: result.source ?? null,
           cadSourcePath: result.sourcePath ?? null,
-          previewImage: result.preview ? new Uint8Array(result.preview.data) : null,
-          previewMimetype: result.preview?.mimetype ?? null,
           description: {
             create: { ...nextState, raw: renderDesignState(nextState) },
           },

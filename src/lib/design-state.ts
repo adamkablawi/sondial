@@ -10,9 +10,11 @@
  * The state is the thing that persists. The Meshy prompt is a lossy visual
  * projection of it, recompiled per generation and never treated as the record.
  *
- * Every function degrades to a deterministic non-LLM path when OPENAI_API_KEY is
- * absent, so the whole pipeline runs with no API keys at all.
+ * Every function degrades to a deterministic non-LLM path when no LLM provider
+ * is configured, so the whole pipeline runs with no API keys at all.
  */
+
+import { callLLM } from "./llm";
 
 export interface DesignState {
   summary: string;
@@ -62,48 +64,6 @@ export function renderDesignState(state: DesignState): string {
   ].join("\n\n");
 }
 
-// ── OpenAI plumbing ──
-
-async function callOpenAI(
-  system: string,
-  user: string,
-  opts: { json?: boolean; model?: string; maxTokens?: number } = {},
-): Promise<string | null> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: opts.model ?? "gpt-4o-mini",
-        temperature: 0.4,
-        max_tokens: opts.maxTokens ?? 1200,
-        ...(opts.json ? { response_format: { type: "json_object" } } : {}),
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      console.error("[design-state] OpenAI error:", response.status, await response.text());
-      return null;
-    }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content?.trim() ?? null;
-  } catch (err) {
-    console.error("[design-state] OpenAI call failed:", err);
-    return null;
-  }
-}
-
 function parseState(raw: string | null, fallback: DesignState): DesignState {
   if (!raw) return fallback;
   try {
@@ -150,7 +110,7 @@ export async function seedDesignState(input: {
     rationale: "Seeded directly from the initial brief.",
   };
 
-  const raw = await callOpenAI(
+  const raw = await callLLM(
     SEED_SYSTEM,
     `Brief: "${input.brief}"\n\nProject manufacturing constraints: ${
       input.constraints?.trim() || "none stated"
@@ -187,7 +147,7 @@ export async function evolveDesignState(input: {
   // Without a key, record the request honestly rather than silently dropping it.
   const fallback: DesignState = {
     ...input.current,
-    rationale: `${input.current.rationale}\n- Requested: "${input.instruction}" (applied without LLM refinement; OPENAI_API_KEY not set).`,
+    rationale: `${input.current.rationale}\n- Requested: "${input.instruction}" (applied without LLM refinement; no LLM provider configured).`,
   };
 
   const historyText = (input.history ?? [])
@@ -205,7 +165,7 @@ export async function evolveDesignState(input: {
     .filter(Boolean)
     .join("\n\n");
 
-  const raw = await callOpenAI(EVOLVE_SYSTEM, user, { json: true, maxTokens: 1600 });
+  const raw = await callLLM(EVOLVE_SYSTEM, user, { json: true, maxTokens: 1600 });
   return parseState(raw, fallback);
 }
 
@@ -235,7 +195,7 @@ When uncertain, answer REGENERATE.
 Reply with exactly one word: RETEXTURE or REGENERATE.`;
 
 export async function classifyInstruction(instruction: string): Promise<Strategy> {
-  const raw = await callOpenAI(CLASSIFY_SYSTEM, instruction, { maxTokens: 5 });
+  const raw = await callLLM(CLASSIFY_SYSTEM, instruction, { maxTokens: 5 });
 
   if (raw) {
     const answer = raw.toUpperCase();
@@ -269,7 +229,7 @@ Output only the prompt text.`;
  * the state remains the record of truth; this is a per-generation rendering.
  */
 export async function compileMeshyPrompt(state: DesignState): Promise<string> {
-  const raw = await callOpenAI(PROMPT_SYSTEM, renderDesignState(state), { maxTokens: 200 });
+  const raw = await callLLM(PROMPT_SYSTEM, renderDesignState(state), { maxTokens: 200 });
   if (raw) return raw;
 
   // Deterministic projection: the visually-relevant fields, trimmed.

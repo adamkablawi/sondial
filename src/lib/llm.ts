@@ -68,7 +68,7 @@ async function callAnthropic(
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: opts.model ?? process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5",
+        model: opts.model ?? process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5",
         system,
         messages,
         max_tokens: opts.maxTokens ?? 1200,

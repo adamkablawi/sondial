@@ -152,6 +152,35 @@ message explains it in chat. Verified end-to-end — concurrent edits chain
 - `plans/refactor-editor-for-real-models.md` is a **stale, unimplemented** design
   doc from the previous architecture. Ignore it.
 
+## Zoo (zoo.dev) — CAD generation
+
+`MESH_PROVIDER=zoo` generates **parametric CAD via KCL source**, not a mesh.
+This changes the constraint at the top of this file: Meshy cannot edit an
+existing mesh, but KCL is code, so with Zoo geometric continuity between
+versions is achievable for real rather than carried semantically. The design
+state remains useful as the record of intent; it is no longer the *only*
+carrier of continuity. Treat that as an open design question, not a settled one.
+
+Zoo retired the REST create endpoint (`POST /ai/text-to-cad/*` returns 404,
+while protected routes return 401 — the routes are gone, not merely
+unauthorized). Generation is `wss://api.zoo.dev/ws/ml/copilot`:
+
+- Auth is a `{type:"headers", headers:{Authorization:"Bearer …"}}` message sent
+  **after** connecting, not a handshake header. Verified against the live API.
+- A `{type:"ping"}` heartbeat every ~5s is mandatory or the server drops you.
+- Server messages are single-key objects (`{delta:…}`, `{files:…}`,
+  `{error:{detail}}`), unlike the `type`-tagged client messages.
+- The socket returns **KCL**. Geometry arrives separately: the run produces a
+  Text-to-CAD record whose `outputs` hold base64 geometry, fetched over REST.
+  `/api/zoo/mesh/[id]` is the only place the key is used browser-side, because
+  Zoo's outputs are account-scoped and cannot be linked to directly.
+
+**Unverified without a live key:** whether a copilot run always produces a
+Text-to-CAD record carrying evaluated geometry, or only KCL. If it is KCL-only,
+rendering needs `/ws/modeling/commands` (Zoo's engine socket) — note that
+`/file/execute/{lang}` is go/python/node only and `/file/conversion` does not
+accept KCL as an import format, so there is no REST shortcut.
+
 ## Local setup notes
 
 Infra here is **Postgres.app on the default 5432** plus **Homebrew Redis on

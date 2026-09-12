@@ -45,6 +45,32 @@ Infra is **native Homebrew Postgres + Redis** (`infra:brew:up` / `infra:brew:dow
 `docker-compose.yml` is an equivalent alternative (`infra:docker:up`) but uses
 shifted host ports 5433/6380 — `.env` must match whichever you run.
 
+### Public access — `npm run dev:tunnel`
+
+Puts the whole stack behind one ngrok URL, reachable from anywhere. Not two
+tunnels for :3000/:3001 — ngrok's free tier issues **one shared dev domain per
+account**, not one subdomain per tunnel (confirmed directly against a real
+account: two separately-tunneled ports came back with the identical public
+URL — a platform change from ngrok's older behavior). `server/tunnel-proxy.ts`
+collapses both local services behind a single port (:3002 by default) instead:
+`/socket.io` traffic, upgrade included, routes to the realtime server;
+everything else routes to the Next app. `scripts/dev-tunnel.mjs` starts that
+proxy, starts ngrok pointed at only it, polls ngrok's local API
+(`127.0.0.1:4040/api/tunnels`) for the assigned URL, writes it to
+`NEXT_PUBLIC_REALTIME_URL` in `.env.local` — which has to happen *before*
+`next dev` starts, since `NEXT_PUBLIC_*` is baked in at Next's own startup,
+not read per-request — and only then hands off to the ordinary, unmodified
+`npm run dev`. The env write is reverted on exit (including under `TaskStop`,
+verified) so a stale tunnel URL can't break the next plain `npm run dev`.
+
+Verified end-to-end, not just wired up: the proxy correctly upgrades a real
+Socket.IO connection (confirmed `websocket` transport, not a polling
+fallback) before ngrok was ever involved; a real asset fetch through the live
+public URL came back as genuine GLB bytes with no ngrok interstitial in the
+way (the free-tier warning page only intercepts browser-shaped HTML requests,
+not asset/API fetches — meaning Scene Viewer's raw GLB fetch is fine); and a
+full room-create-join-chat flow round-tripped live over the public URL.
+
 ## Architecture
 
 - **`prisma/schema.prisma`** — Project, Room, Participant, ChatMessage,

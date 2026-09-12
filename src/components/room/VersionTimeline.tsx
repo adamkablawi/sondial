@@ -1,6 +1,7 @@
 "use client";
 
-import { useRoomStore } from "@/stores/room-store";
+import { useState } from "react";
+import { useActiveVersion, useRoomStore } from "@/stores/room-store";
 import type { VersionDTO } from "@/lib/events";
 
 const STATUS_STYLES: Record<VersionDTO["status"], string> = {
@@ -12,12 +13,79 @@ const STATUS_STYLES: Record<VersionDTO["status"], string> = {
   SUPERSEDED: "border-neutral-700 bg-neutral-900 text-neutral-500",
 };
 
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Converts the active version's mesh to OBJ, client-side, and downloads it.
+ * Same dynamic-import-a-three-exporter pattern ARLauncher already uses for
+ * USDZ: no server round-trip, no new dependency (three ships the exporter),
+ * and `/api/export` still doesn't do real format conversion (see CLAUDE.md).
+ */
+async function exportVersionAsObj(version: VersionDTO) {
+  const { meshUrl, meshFormat, versionNumber } = version;
+  if (!meshUrl) throw new Error("No geometry yet");
+  const filename = `sondial-v${versionNumber}.obj`;
+  const format = meshFormat?.toLowerCase();
+
+  if (format === "obj") {
+    const res = await fetch(meshUrl);
+    if (!res.ok) throw new Error("Could not fetch the model");
+    downloadBlob(await res.blob(), filename);
+    return;
+  }
+
+  const THREE = await import("three");
+  const { OBJExporter } = await import("three/examples/jsm/exporters/OBJExporter.js");
+
+  let object: import("three").Object3D;
+  if (format === "stl") {
+    const { STLLoader } = await import("three/examples/jsm/loaders/STLLoader.js");
+    const geometry = await new STLLoader().loadAsync(meshUrl);
+    object = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial());
+  } else {
+    // glb/gltf, and fbx — which this codebase's format detection already
+    // routes through GLTFLoader (see ModelLoader.tsx's isGlbFile).
+    const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+    const gltf = await new GLTFLoader().loadAsync(meshUrl);
+    object = gltf.scene;
+  }
+
+  const objText = new OBJExporter().parse(object);
+  downloadBlob(new Blob([objText], { type: "text/plain" }), filename);
+}
+
 export function VersionTimeline() {
   const versions = useRoomStore((s) => s.versions);
   const jobs = useRoomStore((s) => s.jobs);
   const headVersionId = useRoomStore((s) => s.headVersionId);
   const selectedVersionId = useRoomStore((s) => s.selectedVersionId);
   const selectVersion = useRoomStore((s) => s.selectVersion);
+  const activeVersion = useActiveVersion();
+
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const handleExport = async () => {
+    if (!activeVersion) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      await exportVersionAsObj(activeVersion);
+    } catch {
+      setExportError("Could not export — try again.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const activeId = selectedVersionId ?? headVersionId;
   // A version row only exists once generation succeeds, so in-flight work is
@@ -38,15 +106,29 @@ export function VersionTimeline() {
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
           Versions
         </h2>
-        {selectedVersionId && selectedVersionId !== headVersionId && (
+        <div className="flex items-center gap-2">
+          {exportError && (
+            <span className="text-[11px] text-red-400">{exportError}</span>
+          )}
           <button
             type="button"
-            onClick={() => selectVersion(null)}
-            className="rounded bg-neutral-800 px-2 py-0.5 text-[11px] text-neutral-300 hover:bg-neutral-700"
+            onClick={() => void handleExport()}
+            disabled={!activeVersion?.meshUrl || exporting}
+            title="Download the active version as an .obj file"
+            className="rounded bg-neutral-800 px-2 py-0.5 text-[11px] text-neutral-300 hover:bg-neutral-700 disabled:opacity-40"
           >
-            Follow latest
+            {exporting ? "Exporting…" : "Export OBJ"}
           </button>
-        )}
+          {selectedVersionId && selectedVersionId !== headVersionId && (
+            <button
+              type="button"
+              onClick={() => selectVersion(null)}
+              className="rounded bg-neutral-800 px-2 py-0.5 text-[11px] text-neutral-300 hover:bg-neutral-700"
+            >
+              Follow latest
+            </button>
+          )}
+        </div>
       </div>
 
       {/* pt-1: overflow-x-auto also clips vertically, which would cut the

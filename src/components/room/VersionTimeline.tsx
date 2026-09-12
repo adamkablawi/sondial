@@ -26,8 +26,11 @@ export function VersionTimeline() {
 
   return (
     // shrink-0: as a flex child it would otherwise compress and clip its cards
-    // when the viewer above claims the space.
-    <div className="shrink-0 border-t border-neutral-800 bg-neutral-950">
+    // when the viewer above claims the space. min-h matches the composer's
+    // footer band in ChatPanel.tsx (search "min-h-[110px]" there) so the two
+    // border-t lines land at the same height across the columns — keep both
+    // values equal if either changes.
+    <div className="flex min-h-[110px] shrink-0 flex-col justify-center border-t border-neutral-800 bg-neutral-950">
       <div className="flex items-center justify-between px-4 py-2">
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
           Versions

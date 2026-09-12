@@ -89,7 +89,7 @@ export const useProjectStore = create<ProjectState>()(
       reset: () => set(initialState),
     }),
     {
-      name: "itera-project",
+      name: "sondial-project",
       partialize: (state) => ({
         pipelineStage: state.pipelineStage,
         sourceImage: state.sourceImage,

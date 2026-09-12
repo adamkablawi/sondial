@@ -9,7 +9,8 @@ architecture or conventions actually change, not for one-off task notes.
 discuss a product in real time, and request changes in natural language. Each
 request becomes an immutable new version of the 3D object.
 
-Grew out of a single-player image→3D generator (package name is still `itera`).
+Grew out of an earlier single-player image→3D generator; the package name
+now matches the product (`sondial`).
 Not a monorepo: one `package.json`, one Next.js app, plus two standalone Node
 processes under `server/`.
 

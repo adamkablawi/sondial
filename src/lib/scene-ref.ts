@@ -7,7 +7,7 @@ import type * as THREE from "three";
  * instances (R3F Canvas reconciler vs React DOM, different chunks, etc).
  */
 
-const GLOBAL_KEY = "__itera_scene_ref__" as const;
+const GLOBAL_KEY = "__sondial_scene_ref__" as const;
 
 interface SceneRefGlobal {
   [GLOBAL_KEY]?: THREE.Group | null;

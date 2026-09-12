@@ -1,8 +1,8 @@
-# Itera
+# Sondial
 
 Generate and iterate on 3D models from images or text — in the browser.
 
-Upload a photo, type a description, or do both. Itera converts it into a 3D mesh and gives you a natural language editor to keep refining it.
+Upload a photo, type a description, or do both. Sondial converts it into a 3D mesh and gives you a natural language editor to keep refining it.
 
 ---
 
@@ -50,7 +50,7 @@ Everything defaults to `mock` providers, so you can run locally with no API keys
 
 ## Providers
 
-Itera has a swappable provider system for image and mesh generation, configured via env vars.
+Sondial has a swappable provider system for image and mesh generation, configured via env vars.
 
 ### Mesh generation (`MESH_PROVIDER`)
 

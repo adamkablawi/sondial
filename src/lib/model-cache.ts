@@ -5,7 +5,7 @@
  * even after Meshy's signed URLs expire.
  */
 
-const DB_NAME = "itera-model-cache";
+const DB_NAME = "sondial-model-cache";
 const DB_VERSION = 1;
 const STORE_NAME = "models";
 

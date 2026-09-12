@@ -15,9 +15,8 @@ iterate on a product together with a shared source of truth," not a consumer
 toy — see the design-state architecture below for why that framing fits what's
 actually built.
 
-It grew out of an earlier single-player image→3D generator called **Itera**
-(the `package.json` name is still `itera`, deliberately unchanged — cosmetic,
-not worth the diff).
+It grew out of an earlier single-player image→3D generator (the
+`package.json` name has since been renamed to match: `sondial`).
 
 Two people have worked on this: the user (via this Claude session) built the
 room/chat/versioning/realtime core and the Meshy pipeline; a collaborator

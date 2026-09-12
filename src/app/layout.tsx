@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Itera — 3D Product Design Iteration",
+  title: "Sondial — 3D Product Design Iteration",
   description: "Upload a product image, generate a 3D model, and iterate on the design with natural language.",
 };
 

@@ -15,7 +15,7 @@ export interface StoredJob {
   data?: Record<string, unknown>;
 }
 
-const GLOBAL_KEY = "__itera_job_store__" as const;
+const GLOBAL_KEY = "__sondial_job_store__" as const;
 
 function getStore(): Map<string, StoredJob> {
   const g = globalThis as unknown as Record<string, Map<string, StoredJob> | undefined>;

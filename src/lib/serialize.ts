@@ -43,6 +43,10 @@ export function toVersionDTO(
     status: version.status,
     meshUrl: version.meshUrl,
     meshFormat: version.meshFormat,
+    // The bytes stay in the database; the client gets a URL to fetch them from.
+    previewUrl: version.previewMimetype ? `/api/versions/${version.id}/preview` : null,
+    cadSource: version.cadSource,
+    cadSourcePath: version.cadSourcePath,
     createdAt: version.createdAt.toISOString(),
     createdBy: toAuthor(version.createdBy),
   };

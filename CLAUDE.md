@@ -13,22 +13,47 @@ Grew out of a single-player image→3D generator (package name is still `itera`)
 Not a monorepo: one `package.json`, one Next.js app, plus two standalone Node
 processes under `server/`.
 
-## The constraint that shapes everything
+## Two pipelines, picked by CAD_PROVIDER
 
-**Meshy has no endpoint that edits an existing mesh.** Verified against their API
-docs: text-to-3D, image-to-3D, retexture, remesh, rigging — but nothing that takes
-"existing mesh + instruction → modified mesh". `refine` mode only textures a
-completed `preview` task.
+`src/providers/cad/` puts one interface over two vendors with very different
+properties. `CAD_PROVIDER=zoo` or `mesh` (default `mesh`, so an install with no
+Zoo key behaves exactly as before).
 
-So geometric continuity between versions **cannot come from the vendor**. It is
-carried semantically by the design state (`src/lib/design-state.ts`): every version
-owns a full structured description, and each edit evolves the previous state rather
-than starting from a bare chat message. The state is the record of truth; the Meshy
-prompt is a lossy per-generation projection of it.
+### zoo — parametric and precise (preferred)
 
-Corollary: **millimetre-precise requests ("move the holes 10 mm up") are not
-reliably achievable.** Meshy is generative, not a parametric CAD kernel. That class
-of edit needs OpenSCAD/CadQuery and is out of scope today. Don't promise it.
+Zoo returns **KCL source**, and each edit is applied to the previous version's
+source. Verified end-to-end: "move the two holes 10mm further apart" changed
+**one line out of 82** — `holeSpacing = 60mm` → `70mm`. That class of edit is not
+achievable with mesh generation at all.
+
+`ObjectVersion.cadSource` is the real artifact for these versions. Protocol facts
+below were established by probing the live API — the OpenAPI spec misleads here:
+
+- REST text-to-cad creation is **no longer public**: only `GET /user/text-to-cad`
+  (list) plus an `OPTIONS` stub under `/hidden/`. Generation goes through the
+  `wss://api.zoo.dev/ws/ml/copilot` websocket.
+- The authoritative KCL arrives in **`tool_output.result.outputs`** (map of path →
+  plain text), *not* in the `files` message.
+- `files` is something else entirely: an array of **rendered preview JPEGs** as
+  byte arrays. Stored on the version, served from `/api/versions/{id}/preview`.
+- `current_files` must be sent as **byte arrays**, not strings.
+- The vendor reports no percentage, so worker progress is inferred from message
+  activity and capped below 100 until `end_of_stream`.
+
+Not done: interactive 3D. Rendering KCL needs a second protocol
+(`/ws/modeling/commands`); the viewer shows Zoo's rendered still instead.
+
+### mesh — the original stack, kept as a fallback
+
+`MESH_PROVIDER=meshy|huggingface|mock` behind `MeshAdapter`, which owns the
+submit-and-poll loop. **Meshy has no endpoint that edits an existing mesh**, so
+continuity cannot come from the vendor on this path — it is carried semantically
+by the design state (`src/lib/design-state.ts`), and millimetre-precise requests
+are not achievable. Don't promise them.
+
+The design state runs for both providers: it drives the first generation and
+gives the room a readable narrative. Under zoo it is commentary; the KCL is what
+actually defines the object.
 
 ## Processes
 

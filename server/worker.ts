@@ -3,7 +3,7 @@ import { UnrecoverableError, Worker } from "bullmq";
 import { db } from "../src/lib/db";
 import { createQueueConnection } from "../src/lib/redis";
 import { GENERATION_QUEUE, type GenerationJobPayload } from "../src/lib/queue";
-import { meshProvider } from "../src/providers";
+import { cadProvider } from "../src/providers/cad";
 import {
   classifyInstruction,
   compileMeshyPrompt,
@@ -25,9 +25,6 @@ import {
  * Concurrency is pinned to 1 so requests apply in a defined order and version
  * numbering stays race-free — the ordering guarantee the queue exists to provide.
  */
-
-const POLL_INTERVAL_MS = 2000;
-const POLL_TIMEOUT_MS = 10 * 60 * 1000;
 
 // ── Broadcast helpers ──
 
@@ -102,10 +99,10 @@ function isPermanentFailure(message: string): boolean {
 /** Turns a vendor error into something a room participant can act on. */
 function explainFailure(raw: string): string {
   if (/\b401\b|invalid api key|unauthorized/i.test(raw)) {
-    return `Generation failed: the ${meshProvider.name} API key was rejected. Set a valid key in .env.local and restart, or run with MESH_PROVIDER=mock to keep iterating without one.`;
+    return `Generation failed: the ${cadProvider.name} API key was rejected. Set a valid key in .env.local and restart, or run with MESH_PROVIDER=mock to keep iterating without one.`;
   }
   if (/\b402\b|payment required|quota|credit/i.test(raw)) {
-    return `Generation failed: the ${meshProvider.name} account is out of credit or quota.`;
+    return `Generation failed: the ${cadProvider.name} account is out of credit or quota.`;
   }
   return `Generation failed: ${raw}`;
 }
@@ -202,42 +199,28 @@ async function processJob(payload: GenerationJobPayload): Promise<void> {
     await emitJob(jobId, roomSlug);
 
     // ── Generation.
-    // Nothing touches the version DAG until the vendor actually returns a mesh.
-    // A version represents a real object state, so a failed attempt must not
-    // leave one behind — the attempt itself is recorded on GenerationJob, and
+    // Nothing touches the version DAG until the vendor actually returns
+    // something. A version represents a real object state, so a failed attempt
+    // must not leave one behind — the attempt is recorded on GenerationJob, and
     // the timeline shows in-flight work from the job instead.
     //
-    // NOTE: `strategy` is classified and recorded, but both paths currently run
-    // a full regeneration. Wiring RETEXTURE to Meshy's retexture endpoint (the
-    // only path that preserves geometry exactly) is the next step.
-    const { jobId: meshJobId } = await meshProvider.generateMesh({ prompt });
-
-    const startedAt = Date.now();
-    let lastProgress = -1;
-    let result: { meshFileUrl: string; format: string } | null = null;
-
-    while (!result) {
-      if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
-        throw new Error(`Mesh generation timed out after ${POLL_TIMEOUT_MS / 1000}s`);
-      }
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-
-      const status = await meshProvider.checkStatus(meshJobId);
-
-      if (status.status === "failed") {
-        throw new Error(status.error ?? "Mesh generation failed");
-      }
-      if (typeof status.progress === "number" && status.progress !== lastProgress) {
-        lastProgress = status.progress;
+    // Source-based providers get the base version's CAD source, which is what
+    // makes an edit precise rather than a fresh interpretation of the brief.
+    const result = await cadProvider.generate({
+      instruction: record.instruction,
+      prompt,
+      previousSource: baseVersion.cadSource,
+      onProgress: async (percent) => {
         await db.generationJob.update({
           where: { id: jobId },
-          data: { progress: status.progress },
+          data: { progress: percent },
         });
         await emitJob(jobId, roomSlug);
-      }
-      if (status.status === "complete" && status.result) {
-        result = status.result;
-      }
+      },
+    });
+
+    if (!result.source && !result.meshUrl) {
+      throw new Error(`${cadProvider.name} returned neither CAD source nor a mesh.`);
     }
 
     // ── Commit: the version, its design state, the new head, and the job
@@ -256,9 +239,13 @@ async function processJob(payload: GenerationJobPayload): Promise<void> {
           status: "COMPLETE",
           label: record.instruction.slice(0, 80),
           createdById: record.authorId,
-          meshUrl: proxied(result.meshFileUrl),
-          meshFormat: result.format,
-          meshyTaskId: meshJobId,
+          meshUrl: result.meshUrl ? proxied(result.meshUrl) : null,
+          meshFormat: result.meshFormat ?? null,
+          meshyTaskId: result.externalId ?? null,
+          cadSource: result.source ?? null,
+          cadSourcePath: result.sourcePath ?? null,
+          previewImage: result.preview ? new Uint8Array(result.preview.data) : null,
+          previewMimetype: result.preview?.mimetype ?? null,
           description: {
             create: { ...nextState, raw: renderDesignState(nextState) },
           },

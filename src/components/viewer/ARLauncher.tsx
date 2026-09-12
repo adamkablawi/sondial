@@ -197,6 +197,13 @@ export function ARLauncher({
           ar
           ar-modes="webxr scene-viewer quick-look"
           ar-scale="auto"
+          // These three only affect the WebXR path: Quick Look and Scene
+          // Viewer are closed native apps with no shadow/lighting control at
+          // all, per model-viewer's own docs. "neutral" is a built-in
+          // environment (no separate HDRI asset to host or fail to load).
+          shadow-intensity="1"
+          shadow-softness="1"
+          environment-image="neutral"
           reveal="manual"
           aria-hidden="true"
           style={{

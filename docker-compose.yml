@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: sondial-postgres
+    environment:
+      POSTGRES_USER: sondial
+      POSTGRES_PASSWORD: sondial
+      POSTGRES_DB: sondial
+    # Host port 5433 avoids collision with a system Postgres on 5432.
+    ports:
+      - "5433:5432"
+    volumes:
+      - sondial-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sondial -d sondial"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: sondial-redis
+    # Host port 6380 avoids collision with a local Redis on 6379.
+    ports:
+      - "6380:6379"
+    volumes:
+      - sondial-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  sondial-pgdata:
+  sondial-redisdata:

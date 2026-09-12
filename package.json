@@ -3,17 +3,36 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently -n next,realtime,worker -c cyan,magenta,yellow \"npm:dev:next\" \"npm:dev:realtime\" \"npm:dev:worker\"",
+    "dev:next": "next dev",
+    "dev:realtime": "tsx watch server/realtime.ts",
+    "dev:worker": "tsx watch server/worker.ts",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
+    "infra:brew:up": "brew services start postgresql@17 && brew services start redis",
+    "infra:brew:down": "brew services stop postgresql@17 && brew services stop redis",
+    "infra:docker:up": "docker compose up -d",
+    "infra:docker:down": "docker compose down"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
+    "bullmq": "^6.3.4",
+    "dotenv": "^17.4.2",
+    "ioredis": "^6.0.0",
     "next": "16.1.6",
+    "prisma": "^7.10.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "three": "^0.183.0",
     "zustand": "^5.0.11"
   },
@@ -24,9 +43,11 @@
     "@types/react-dom": "^19",
     "@types/three": "^0.183.0",
     "@types/uuid": "^10.0.0",
+    "concurrently": "^10.0.5",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5"
   }
 }

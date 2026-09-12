@@ -1,129 +1,136 @@
 # CLAUDE.md
 
-Operational memory for working in this repo. Keep this file concise; update it when
+Operational memory for working in this repo. Keep it concise; update it when
 architecture or conventions actually change, not for one-off task notes.
 
 ## What this is
 
-Single Next.js 16 (App Router, Turbopack) app, package name `itera`, product name "Itera" —
-upload a photo and/or describe an object, generate a 3D mesh, iterate on it via a chat panel.
-**Not a monorepo** — one `package.json`, no `packages/`/`apps/` split, no separate backend
-service (API routes under `src/app/api/*` are the entire backend).
+**Sondial** — a collaborative CAD-review workspace. Participants join a shared room,
+discuss a product in real time, and request changes in natural language. Each
+request becomes an immutable new version of the 3D object.
 
-**No git repository exists at the project root** (`git status` fails with "not a git
-repository"). If asked to commit, confirm with the user before running `git init` — don't do
-it silently.
+Grew out of a single-player image→3D generator (package name is still `itera`).
+Not a monorepo: one `package.json`, one Next.js app, plus two standalone Node
+processes under `server/`.
 
-No test framework (no jest/vitest/playwright, no `*.test.*` files) and no CI config
-(no `.github/workflows` or similar) exist in the repo.
+## The constraint that shapes everything
 
-## Architecture map
+**Meshy has no endpoint that edits an existing mesh.** Verified against their API
+docs: text-to-3D, image-to-3D, retexture, remesh, rigging — but nothing that takes
+"existing mesh + instruction → modified mesh". `refine` mode only textures a
+completed `preview` task.
 
-- **Entry points:** `src/app/page.tsx` (home — upload/prompt/generate), `src/app/project/editor/page.tsx` (3D editor + chat)
-- **API routes** (`src/app/api/*`, all thin stateless Route Handlers):
-  - `brief/` — image+prompt → design brief text (OpenAI GPT-4o vision; degrades to raw prompt with no key)
-  - `image-generate/` — text → image (via `imageProvider`)
-  - `generate/` — image/prompt → mesh job, returns `jobId` (via `meshProvider`)
-  - `status/[jobId]/` — poll a mesh job (`meshProvider.checkStatus`)
-  - `edit/` — description + instruction → new prompt (OpenAI GPT-4o-mini; degrades to string concat)
-  - `export/` — **stub**: just echoes the same `modelUrl` back, no real format conversion
-  - `proxy/` — streams external model URLs through the backend (CORS + Vercel body-size limit workaround)
-- **Providers** (`src/providers/`): swappable `mesh-generation/{mock,hf,meshy}` and
-  `image-generation/{mock,hf}`, selected via `MESH_PROVIDER` / `IMAGE_PROVIDER` env vars in
-  `src/providers/index.ts` (`createProvider`). Shared interfaces in `src/providers/types.ts`.
-  Async mesh jobs use `src/providers/job-store.ts`, a `globalThis`-backed `Map` (survives
-  Next dev hot-reload), polled by the client every 500ms.
-- **State:** one Zustand store, `src/stores/project-store.ts`, persisted to localStorage
-  (`persist` middleware, key `"itera-project"`) — pipeline stage, source image, description,
-  model url/format, edit history, chat messages. All cross-page state lives here.
-- **Viewer:** `src/components/viewer/{ModelViewer,ModelLoader}.tsx` — React Three Fiber
-  Canvas; `ModelLoader` picks OBJ/STL/GLTF loader by file extension or an explicit
-  `formatHint` (needed for blob/proxy URLs with no extension). Also publishes the loaded
-  scene to a `globalThis` ref (`src/lib/scene-ref.ts`) to sidestep the R3F/DOM reconciler
-  boundary — no other code currently reads that ref.
-- `src/lib/model-cache.ts` — IndexedDB blob cache helpers (`cacheModelBlob` /
-  `fetchAndCacheModel` / `restoreModelFromCache`). **Currently unused/dead code** — not
-  imported anywhere else. Don't assume models survive a refresh; the store only persists a
-  URL (blob: URLs die on refresh, external URLs go through `/api/proxy`).
-- `src/lib/zip-utils.ts` — placeholder; `extractMeshFromZip` throws "not yet implemented".
+So geometric continuity between versions **cannot come from the vendor**. It is
+carried semantically by the design state (`src/lib/design-state.ts`): every version
+owns a full structured description, and each edit evolves the previous state rather
+than starting from a bare chat message. The state is the record of truth; the Meshy
+prompt is a lossy per-generation projection of it.
 
-## Critical flow: generate (`src/app/page.tsx` → `handleGenerate`)
+Corollary: **millimetre-precise requests ("move the holes 10 mm up") are not
+reliably achievable.** Meshy is generative, not a parametric CAD kernel. That class
+of edit needs OpenSCAD/CadQuery and is out of scope today. Don't promise it.
 
-Upload → `POST /api/brief` (description) → *(if no image)* `POST /api/image-generate` →
-`POST /api/generate` (starts mesh job) → poll `GET /api/status/[jobId]` every 500ms →
-rewrite external mesh URLs through `/api/proxy` → `setModel` in the store → navigate to
-`/project/editor`.
+## Processes
 
-## Critical flow: edit (`src/app/project/editor/page.tsx` → `handleSendInstruction`)
+`npm run dev` runs all three via `concurrently`:
 
-`POST /api/edit` (description + instruction → new prompt, GPT-4o-mini) → `POST
-/api/image-generate` (new prompt → new image) → `POST /api/generate` (new image → new mesh
-job) → poll status → `setModel` + `addEdit` + `addMessage`.
+| Process | Script | Port | Role |
+|---|---|---|---|
+| Next app | `dev:next` | 3000 | UI + API routes |
+| Realtime | `dev:realtime` | 3001 | Socket.IO fan-out, presence |
+| Worker | `dev:worker` | — | BullMQ consumer, generation |
 
-**Important:** every chat instruction regenerates the image and reruns the *entire* mesh
-pipeline from scratch. There is no client-side geometry editing (scale/translate/recolor/etc.
-applied directly to the loaded Three.js scene) currently implemented, despite what
-`plans/refactor-editor-for-real-models.md` describes — see below.
+Infra is **native Homebrew Postgres + Redis** (`infra:brew:up` / `infra:brew:down`).
+`docker-compose.yml` is an equivalent alternative (`infra:docker:up`) but uses
+shifted host ports 5433/6380 — `.env` must match whichever you run.
 
-## `plans/refactor-editor-for-real-models.md` is a stale, unimplemented design doc
+## Architecture
 
-It describes a materially different editor architecture: `BRepPart` → `ScenePart` types,
-`extractPartsFromScene`, `src/lib/instruction-parser.ts`, `src/lib/edit-engine.ts`,
-`src/components/viewer/PartTree.tsx`, and an OpenSCAD-backed `/api/cad-edit` route for
-client-side ops like `fillet_edges`, with only `fillet_edges` falling back server-side.
-**Verified: none of these files exist in `src/`.** Treat this file as a proposal/roadmap, not
-current behavior — don't assume its types or files exist without checking.
+- **`prisma/schema.prisma`** — Project, Room, Participant, ChatMessage,
+  ObjectVersion (self-referential `parentId` DAG), VersionDescription,
+  GenerationJob. Core invariant: **versions are immutable**; an edit creates a
+  child plus a new description. Descriptions are never overwritten.
+- **`src/lib/events.ts`** — the realtime contract shared by every process. Change
+  it and you change the worker, the socket server, and the client at once.
+- **`src/lib/design-state.ts`** — seed / evolve / classify / project-to-prompt.
+  Every function degrades to a deterministic non-LLM path with no `OPENAI_API_KEY`.
+- **`server/worker.ts`** — concurrency pinned to **1** so requests apply in a
+  defined order and version numbering stays race-free. Don't raise it without
+  solving version-number allocation.
+- **`src/lib/serialize.ts`** — DTO mapping plus `publishRoomEvent`, the single
+  fan-out path.
 
-Two small traces of this unfinished work remain and are otherwise dead code:
-- `ModelLoader.tsx` has a `/api/cad-edit/.../result` URL pattern check for STL detection —
-  unreachable since no route currently produces such URLs.
-- `.claude/settings.json` pre-approves invoking a Windows-path OpenSCAD binary, suggesting
-  this was explored (possibly on another machine) but never landed here.
+### Flow of one change request
 
-## Conventions to follow (current, repeated patterns)
+```
+chat INSTRUCTION -> POST /api/rooms/[slug]/messages
+  -> persist ChatMessage + GenerationJob (pinned to current head)
+  -> BullMQ enqueue -> Redis
+  -> worker: rebase check -> evolve design state -> compile prompt
+  -> Meshy generate + poll
+  -> new ObjectVersion + VersionDescription, project head moves
+  -> publish to Redis -> Socket.IO -> every participant
+```
 
-- **API routes:** `export async function POST/GET`, whole body wrapped in try/catch, `catch`
-  returns `NextResponse.json({ error: message }, { status: 500 })`, inputs narrowed with `as {
-  ... }` casts — no runtime schema validation library in use (no zod/yup).
-- **Providers:** a class implementing `MeshGenerationProvider` or `ImageGenerationProvider`
-  (`src/providers/types.ts`), registered in the map in `src/providers/index.ts`, selected by
-  env var with `mock` as the universal no-key-required fallback. `meshy-provider.ts` is the
-  fully-implemented reference; `hf-provider.ts` (mesh) is intentionally a partial stub —
-  match whichever level of completeness the task calls for, don't silently "finish" a stub
-  provider unless asked.
-- **Async jobs:** use `jobStore` (`src/providers/job-store.ts`) + client polling against
-  `/api/status/[jobId]` every 500ms. Prefer this over introducing webhooks/queues for new
-  long-running provider work.
-- **OpenAI calls:** always guarded by `if (apiKey)` with a graceful degrade path (return the
-  raw prompt/instruction) when absent — every LLM-touching route must keep working with zero
-  keys configured; this is a first-class requirement (README: "Everything defaults to mock
-  providers").
-- **Client state:** everything that must survive navigation to `/project/editor` goes in the
-  single `project-store.ts` Zustand store, not component-local state.
-- **Styling:** Tailwind v4 utility classes inline in JSX; no CSS modules / styled-components.
-- Every interactive component/page file starts with `"use client"`.
+**Persist before broadcast, always.** The socket layer is pure fan-out; clients
+never write through it. That is why a dropped connection can't lose a message —
+`useRoomSocket` re-fetches the snapshot on reconnect.
 
-## Build / verify
+### Concurrent edits
 
-- `npm run lint` — ESLint flat config (`eslint.config.mjs`), extends
-  `eslint-config-next` core-web-vitals + typescript.
-- `npx tsc --noEmit` — `tsconfig.json` has `strict: true`; this is the closest thing to CI
-  verification available locally (there is no test runner and no CI pipeline).
-- Deploys to Vercel (`.vercel/project.json`, `.vercelignore` present); no other
-  infra-as-code in the repo.
+Two people editing the same base version is the *normal* case, so the worker
+**auto-rebases**: if the head moved while a job was queued, the instruction is
+re-applied onto the new head, `rebasedFromVersionId` is recorded, and a SYSTEM
+message explains it in chat. Verified end-to-end — concurrent edits chain
+(v1→v2→v3) rather than one clobbering the other.
 
-## Environment / secrets
+## Conventions
 
-`.env.local` (gitignored) holds: `MESH_PROVIDER`, `IMAGE_PROVIDER`, `MESHY_API_KEY`,
-`HF_API_TOKEN`, `HF_IMAGE_MODEL`, `HF_ENDPOINT`, `OPENAI_API_KEY`. Confirmed in code (not
-just the README) that every provider defaults to `mock` and every OpenAI call degrades
-gracefully with zero keys set.
+- **API routes**: `export async function POST/GET`, whole body in try/catch,
+  `NextResponse.json({ error }, { status })`, inputs narrowed with `as { … }`
+  casts. No runtime schema library in use — don't add one casually.
+- **Providers** (`src/providers/`): class implementing the interface in
+  `types.ts`, registered in `index.ts`, selected by env var, `mock` as the
+  universal no-key fallback. `meshy-provider.ts` is the reference implementation;
+  the mesh `hf-provider.ts` is deliberately a stub.
+- **Everything must run with zero API keys.** Mock providers plus non-LLM design
+  state fallbacks make the whole pipeline exercisable offline — preserve this, it
+  is how the system is tested.
+- **Env precedence** for the standalone processes is handled by `server/env.ts`:
+  shell > `.env.local` > `.env`, mirroring Next. Import it first in any new
+  server entry point, or provider keys in `.env.local` will be silently missed.
+- **globalThis singletons** (`db`, `publisher`, `generationQueue`) — survives Next
+  hot-reload and keeps the worker from leaking pools. Follow this for new clients.
+- Tailwind utilities inline; `"use client"` on every interactive component.
 
-## Known gaps / dead or stubbed code — verify before depending on these
+## Verify
 
-- `/api/export` always returns the same `modelUrl` unchanged — no real format conversion,
-  despite the editor UI implying OBJ/GLB/STL/FBX export.
-- `src/lib/model-cache.ts` and `src/lib/zip-utils.ts` are unused/unimplemented.
-- `HuggingFaceProvider.checkStatus` (mesh-generation) always returns
-  `{status: "pending", error: "HuggingFace provider not yet implemented"}`.
-- `plans/refactor-editor-for-real-models.md` — see dedicated section above.
+- `npm run typecheck` — clean, and the real safety net here.
+- `npm run lint` — **2 pre-existing errors remain** in
+  `src/components/viewer/ModelLoader.tsx` (setState inside effect bodies, lines
+  ~147 and ~194). Both predate this work and are load-bearing for scene
+  reset/init. Fixing them means refactoring the R3F viewer — do it only with a
+  browser to verify against, since nothing else covers that component.
+- There is still **no test suite and no CI**.
+
+## Known gaps — check before relying on these
+
+- **`JobStrategy.RETEXTURE` is classified and recorded but not executed.** Both
+  strategies currently run a full regeneration. Wiring retexture to Meshy's
+  retexture endpoint is the highest-value next step: it is the *only* path that
+  preserves geometry exactly.
+- **Approvals are schema-only.** `VersionStatus` has APPROVED/REJECTED/SUPERSEDED
+  and the timeline renders them, but no endpoint sets them, and there is no
+  restore/branch/compare UI yet.
+- **AR is not implemented.** The viewer is desktop R3F. `@react-three/xr` is not
+  installed; the scene graph is isolated in `ModelLoader` so wrapping it in an XR
+  session is contained, but treat AR as unstarted.
+- **`/api/export`** still just echoes back the same URL — no format conversion.
+- **The old single-player flow still exists** at `/project/editor` with
+  `src/components/editor/EditChat.tsx` and `/api/{brief,edit,generate,image-generate,status}`.
+  `/api/generate`, `/api/status`, and `/api/proxy` are still used (the worker and
+  viewer depend on proxy); the editor page itself is now orphaned — a deletion
+  candidate, left in place deliberately rather than removed without asking.
+- `src/lib/model-cache.ts` and `src/lib/zip-utils.ts` remain unused/unimplemented.
+- `plans/refactor-editor-for-real-models.md` is a **stale, unimplemented** design
+  doc from the previous architecture. Ignore it.

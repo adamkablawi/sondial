@@ -1,0 +1,225 @@
+// Sondial — collaborative AR CAD review workspace.
+//
+// Core invariant: object versions are IMMUTABLE. An edit never mutates a version;
+// it creates a child version plus a freshly compiled design-state description.
+// The canonical description is never overwritten — each version owns its own.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+
+}
+
+// ── Project & room ──
+
+/// A product under design. Owns the version DAG and the manufacturing
+/// constraints injected into every compiled generation prompt.
+model Project {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  /// Project-level manufacturing requirements, carried into every prompt.
+  constraints String?
+  /// Canonical current version. Queued jobs compare against this to detect staleness.
+  headVersionId String?
+
+  createdAt DateTime @default(now())
+
+  rooms    Room[]
+  versions ObjectVersion[]
+  jobs     GenerationJob[]
+}
+
+model Room {
+  id        String   @id @default(cuid())
+  projectId String
+  slug      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+
+  project      Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  participants Participant[]
+  messages     ChatMessage[]
+  jobs         GenerationJob[]
+
+  @@index([projectId])
+}
+
+/// An anonymous room member. `sessionId` is a client-held opaque token so a
+/// participant keeps their identity and attribution across reconnects.
+model Participant {
+  id          String   @id @default(cuid())
+  roomId      String
+  displayName String
+  sessionId   String   @unique
+  /// Stable presence colour, also used for attribution chips.
+  color       String
+  connected   Boolean  @default(true)
+  lastSeenAt  DateTime @default(now())
+  joinedAt    DateTime @default(now())
+
+  room     Room            @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+  jobs     GenerationJob[]
+  versions ObjectVersion[]
+
+  @@index([roomId])
+}
+
+// ── Chat ──
+
+enum MessageKind {
+  /// Plain discussion. Never triggers generation.
+  CHAT
+  /// An explicit change request. Enqueues a generation job.
+  INSTRUCTION
+  /// Server-authored status notice.
+  SYSTEM
+}
+
+model ChatMessage {
+  id            String      @id @default(cuid())
+  roomId        String
+  participantId String?
+  kind          MessageKind @default(CHAT)
+  body          String
+  createdAt     DateTime    @default(now())
+
+  room        Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  participant Participant?   @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  job         GenerationJob?
+
+  @@index([roomId, createdAt])
+}
+
+// ── Versioning ──
+
+enum VersionStatus {
+  GENERATING
+  COMPLETE
+  FAILED
+  APPROVED
+  REJECTED
+  /// A newer sibling was approved onto the same parent.
+  SUPERSEDED
+}
+
+/// An immutable snapshot of the object. Never updated in place except for
+/// lifecycle status (generating -> complete/failed, then review outcome).
+model ObjectVersion {
+  id            String  @id @default(cuid())
+  projectId     String
+  /// Parent in the lineage DAG. Null only for the root version.
+  parentId      String?
+  versionNumber Int
+  label         String?
+
+  status       VersionStatus @default(GENERATING)
+  meshUrl      String?
+  meshFormat   String?
+  meshyTaskId  String?
+  thumbnailUrl String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  project      Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent       ObjectVersion?      @relation("VersionLineage", fields: [parentId], references: [id])
+  children     ObjectVersion[]     @relation("VersionLineage")
+  createdBy    Participant?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  description  VersionDescription?
+  jobsFromBase GenerationJob[]     @relation("JobBase")
+  jobResult    GenerationJob?      @relation("JobResult")
+
+  @@unique([projectId, versionNumber])
+  @@index([projectId])
+  @@index([parentId])
+}
+
+/// The durable "design state" for one version — the grounding context that makes
+/// iterative edits coherent. Written once per version, never overwritten.
+model VersionDescription {
+  id        String @id @default(cuid())
+  versionId String @unique
+
+  /// One-paragraph product vision.
+  summary     String
+  /// Form, proportions, key geometric features.
+  geometry    String
+  /// Materials, finish, colour.
+  materials   String
+  /// Sizes and tolerances, as far as they are known.
+  dimensions  String
+  /// Manufacturing constraints this version must respect.
+  constraints String
+  /// Intended function and use.
+  function    String
+  /// Design decisions made so far, and why.
+  rationale   String
+  /// Full compiled text, i.e. what the model actually receives as context.
+  raw         String
+
+  createdAt DateTime @default(now())
+
+  version ObjectVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+}
+
+// ── Generation jobs ──
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETE
+  FAILED
+  /// Base version was no longer head when the job ran; needs user review.
+  SUPERSEDED
+}
+
+enum JobStrategy {
+  /// Geometry/semantic change: recompile design state, run full Meshy generation.
+  REGENERATE
+  /// Appearance-only change: Meshy retexture against the base version's task.
+  RETEXTURE
+}
+
+/// One queued natural-language change request. Pinned to the base version it was
+/// authored against, so a design that moves underneath it can be detected.
+model GenerationJob {
+  id        String @id @default(cuid())
+  roomId    String
+  projectId String
+
+  baseVersionId   String
+  resultVersionId String? @unique
+  messageId       String? @unique
+  authorId        String?
+  /// Set when the design moved between enqueue and execution: the request was
+  /// re-applied onto the newer head, and this records what it was authored against.
+  rebasedFromVersionId String?
+
+  /// Raw natural-language request as typed by the participant.
+  instruction    String
+  /// Exactly what was sent to Meshy, retained for audit and reproduction.
+  compiledPrompt String?
+  strategy       JobStrategy @default(REGENERATE)
+  status         JobStatus   @default(QUEUED)
+  progress       Int         @default(0)
+  error          String?
+
+  createdAt  DateTime  @default(now())
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  room          Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  baseVersion   ObjectVersion  @relation("JobBase", fields: [baseVersionId], references: [id])
+  resultVersion ObjectVersion? @relation("JobResult", fields: [resultVersionId], references: [id])
+  message       ChatMessage?   @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  author        Participant?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([roomId, createdAt])
+  @@index([status])
+}

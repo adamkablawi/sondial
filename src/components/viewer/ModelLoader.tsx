@@ -128,9 +128,13 @@ export function ModelLoader({ url, mtlUrl, formatHint, selectedPartId, onPartSel
   const hoveredRef = useRef<THREE.Mesh | null>(null);
   const [initialized, setInitialized] = useState(false);
 
-  // Use a ref for onSceneReady to avoid stale closure issues in the init effect
+  // Use a ref for onSceneReady to avoid stale closure issues in the init effect.
+  // Synced in an effect (not during render) so React can keep renders pure;
+  // declared before the init effect so it lands first on every render.
   const onSceneReadyRef = useRef(onSceneReady);
-  onSceneReadyRef.current = onSceneReady;
+  useEffect(() => {
+    onSceneReadyRef.current = onSceneReady;
+  }, [onSceneReady]);
 
   const scene = loadedScene;
 

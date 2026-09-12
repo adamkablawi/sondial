@@ -3,7 +3,7 @@
 import { Component, Suspense, useRef, useEffect, useState, useCallback } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, Environment, ContactShadows } from "@react-three/drei";
-import { ModelLoader } from "./ModelLoader";
+import { GROUND_Y, ModelLoader } from "./ModelLoader";
 import * as THREE from "three";
 
 interface ModelViewerProps {
@@ -120,7 +120,7 @@ export function ModelViewer({ modelUrl, mtlUrl, modelFormat, selectedPartId, onP
           </LoadErrorBoundary>
 
           <CanvasReporter onCanvasReady={onCanvasReady} />
-          <ContactShadows position={[0, -0.5, 0]} opacity={0.3} blur={2} />
+          <ContactShadows position={[0, GROUND_Y, 0]} opacity={0.3} blur={2} />
           <OrbitControls
             makeDefault
             enableDamping
@@ -129,7 +129,7 @@ export function ModelViewer({ modelUrl, mtlUrl, modelFormat, selectedPartId, onP
             maxDistance={20}
           />
 
-          <gridHelper args={[10, 10, "#222", "#222"]} position={[0, -0.5, 0]} />
+          <gridHelper args={[10, 10, "#222", "#222"]} position={[0, GROUND_Y, 0]} />
         </Canvas>
       )}
     </div>

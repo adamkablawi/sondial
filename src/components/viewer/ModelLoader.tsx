@@ -23,6 +23,11 @@ const HIGHLIGHT_COLOR = new THREE.Color(0x4488ff);
 const HOVER_EMISSIVE = 0.15;
 const SELECT_EMISSIVE = 0.3;
 
+/** Largest dimension every model is normalised to, so versions stay comparable. */
+const TARGET_SIZE = 4;
+/** The ground plane. Must match the grid and contact shadows in ModelViewer. */
+export const GROUND_Y = -0.5;
+
 /**
  * Resolve the effective file path from a URL.
  * Handles proxy URLs (extracts the original URL from the query string),
@@ -172,20 +177,28 @@ export function ModelLoader({ url, mtlUrl, formatHint, selectedPartId, onPartSel
     });
 
     if (hasMeshes) {
+      // useLoader caches by URL, so revisiting a version hands back the same
+      // object with last time's transform still on it. Box3.setFromObject reads
+      // world space, so measuring without resetting first would compound the
+      // previous fit and make the model drift up or down each time it is shown.
+      scene.scale.setScalar(1);
+      scene.position.set(0, 0, 0);
+      scene.updateMatrixWorld(true);
+
       const box = new THREE.Box3().setFromObject(scene);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
 
       if (maxDim > 0) {
-        const targetSize = 4;
-        const scaleFactor = targetSize / maxDim;
+        const scaleFactor = TARGET_SIZE / maxDim;
         scene.scale.setScalar(scaleFactor);
 
-        const scaledMinY = box.min.y * scaleFactor;
+        // Sit the model on the ground plane, centred horizontally, so every
+        // version is framed identically however it was modelled.
         scene.position.set(
           -center.x * scaleFactor,
-          -scaledMinY,
+          GROUND_Y - box.min.y * scaleFactor,
           -center.z * scaleFactor,
         );
       }

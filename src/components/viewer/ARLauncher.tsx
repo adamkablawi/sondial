@@ -7,9 +7,24 @@ interface ARLauncherProps {
   /** Absolute URL of the mesh. Only GLB can be handed to the platform AR viewers. */
   meshUrl: string | null;
   meshFormat: string | null;
-  /** Optional USDZ for iOS Quick Look. Nothing writes this yet — see note below. */
+  /**
+   * Optional pre-built USDZ for iOS Quick Look. Nothing in the app writes this
+   * yet; when it is absent the GLB is converted in the browser instead.
+   */
   usdzUrl?: string | null;
   alt: string;
+}
+
+/**
+ * iPhone, iPad, and iPadOS — which reports itself as a Mac and is separable
+ * only by the touch points. Quick Look is the only AR mode these expose.
+ */
+function isAppleMobile() {
+  if (typeof navigator === "undefined") return false;
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
 }
 
 /**
@@ -27,8 +42,10 @@ interface ARLauncherProps {
  * Two real limitations, deliberately surfaced rather than hidden:
  *   - **GLB only.** Scene Viewer and WebXR take glTF; OBJ/STL/FBX versions get
  *     no AR button at all rather than a button that fails.
- *   - **iOS needs a USDZ.** Quick Look will not open a GLB. `ObjectVersion` has
- *     no USDZ column yet, so on iOS this falls back to the QR handoff.
+ *   - **iOS needs a USDZ.** Quick Look will not open a GLB, and `ObjectVersion`
+ *     still has no USDZ column, so on iOS the GLB is converted in the browser
+ *     with three's USDZExporter and Quick Look is handed a blob. If that
+ *     conversion fails the QR handoff stays available.
  */
 export function ARLauncher({ meshUrl, meshFormat, usdzUrl, alt }: ARLauncherProps) {
   const ref = useRef<HTMLElement & { canActivateAR?: boolean; activateAR?: () => void }>(null);
@@ -36,6 +53,8 @@ export function ARLauncher({ meshUrl, meshFormat, usdzUrl, alt }: ARLauncherProp
   const [canAR, setCanAR] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [roomUrl, setRoomUrl] = useState<string | null>(null);
+  const [iosUsdz, setIosUsdz] = useState<string | null>(null);
+  const [preparingUsdz, setPreparingUsdz] = useState(false);
 
   // Scene Viewer and Quick Look fetch the mesh from outside the page, so a
   // relative path is not enough — it has to be absolute. Resolving against the
@@ -55,6 +74,48 @@ export function ARLauncher({ meshUrl, meshFormat, usdzUrl, alt }: ARLauncherProp
     setRoomUrl(window.location.href);
     setOrigin(window.location.origin);
   }, []);
+
+  // An explicit USDZ from the caller always wins; otherwise convert the GLB
+  // here. The exporter ships with three, so this costs no new dependency and
+  // no server round-trip, and it keeps `ObjectVersion` unchanged.
+  const iosSrc = usdzUrl ?? iosUsdz;
+
+  useEffect(() => {
+    if (!arSrc || usdzUrl || !isAppleMobile()) return;
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setPreparingUsdz(true);
+
+    void (async () => {
+      try {
+        const [{ GLTFLoader }, { USDZExporter }] = await Promise.all([
+          import("three/examples/jsm/loaders/GLTFLoader.js"),
+          import("three/examples/jsm/exporters/USDZExporter.js"),
+        ]);
+        const gltf = await new GLTFLoader().loadAsync(arSrc);
+        // quickLookCompatible trades some material fidelity for the subset of
+        // USD that Quick Look actually renders.
+        const usdz = await new USDZExporter().parseAsync(gltf.scene, {
+          quickLookCompatible: true,
+        });
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(
+          new Blob([usdz], { type: "model/vnd.usdz+zip" }),
+        );
+        setIosUsdz(objectUrl);
+      } catch {
+        // Not fatal — without an ios-src the QR handoff is still offered.
+      } finally {
+        if (!cancelled) setPreparingUsdz(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [arSrc, usdzUrl]);
 
   useEffect(() => {
     if (!arSrc) return;
@@ -81,7 +142,7 @@ export function ARLauncher({ meshUrl, meshFormat, usdzUrl, alt }: ARLauncherProp
       el.removeEventListener("load", check);
       clearTimeout(timer);
     };
-  }, [loaded, arSrc]);
+  }, [loaded, arSrc, iosSrc]);
 
   // Nothing to place: no mesh, or a format the platform viewers won't take.
   if (!arSrc) return null;
@@ -93,7 +154,7 @@ export function ARLauncher({ meshUrl, meshFormat, usdzUrl, alt }: ARLauncherProp
           key={arSrc}
           ref={ref as React.Ref<HTMLElement>}
           src={arSrc}
-          {...(usdzUrl ? { "ios-src": usdzUrl } : {})}
+          {...(iosSrc ? { "ios-src": iosSrc } : {})}
           alt={alt}
           ar
           ar-modes="webxr scene-viewer quick-look"
@@ -124,6 +185,14 @@ export function ARLauncher({ meshUrl, meshFormat, usdzUrl, alt }: ARLauncherProp
             className="rounded-lg border border-neutral-600 bg-neutral-900/90 px-4 py-2 text-xs font-medium text-neutral-100 backdrop-blur-sm transition-colors hover:border-neutral-400"
           >
             Place it in the room
+          </button>
+        ) : preparingUsdz ? (
+          <button
+            type="button"
+            disabled
+            className="rounded-lg border border-neutral-700 bg-neutral-900/90 px-4 py-2 text-xs text-neutral-400 backdrop-blur-sm"
+          >
+            Preparing AR...
           </button>
         ) : (
           <button

@@ -137,11 +137,13 @@ message explains it in chat. Verified end-to-end — concurrent edits chain
 - **AR reaches the platform viewers only, and GLB only.** `ARLauncher` renders a
   collapsed, inert `<model-viewer>` purely to call `activateAR()` — WebXR and
   Scene Viewer on Android. The on-screen viewer is still R3F; `@react-three/xr`
-  is not installed, so there is no in-page XR session. Two live gaps: iOS Quick
-  Look needs a USDZ and `ObjectVersion` has no column for one (iOS falls back to
-  the QR handoff), and non-GLB versions get no AR button at all, by design.
-  Scene Viewer fetches the mesh itself, so the URL must be reachable from the
-  phone — `localhost` will not do over a LAN.
+  is not installed, so there is no in-page XR session. On iOS, Quick Look will
+  not open a GLB and `ObjectVersion` still has no USDZ column, so the GLB is
+  converted in the browser with three's `USDZExporter` and Quick Look is handed
+  a blob URL; a caller-supplied `usdzUrl` always wins, and if the conversion
+  throws the QR handoff remains. Remaining gap: non-GLB versions get no AR
+  button at all, by design. Scene Viewer fetches the mesh itself, so the URL
+  must be reachable from the phone — `localhost` will not do over a LAN.
 - **`/api/export`** still just echoes back the same URL — no format conversion.
 - **The old single-player flow still exists** at `/project/editor` with
   `src/components/editor/EditChat.tsx` and `/api/{brief,edit,generate,image-generate,status}`.

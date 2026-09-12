@@ -27,11 +27,11 @@ export function VersionTimeline() {
   return (
     // shrink-0: as a flex child it would otherwise compress and clip its cards
     // when the viewer above claims the space. min-h matches the composer's
-    // footer band in ChatPanel.tsx (search "min-h-[110px]" there) so the two
+    // footer band in ChatPanel.tsx (search "min-h-[88px]" there) so the two
     // border-t lines land at the same height across the columns — keep both
     // values equal if either changes.
-    <div className="flex min-h-[110px] shrink-0 flex-col justify-center border-t border-neutral-800 bg-neutral-950">
-      <div className="flex items-center justify-between px-4 py-2">
+    <div className="flex min-h-[88px] shrink-0 flex-col justify-center border-t border-neutral-800 bg-neutral-950">
+      <div className="flex items-center justify-between px-4 py-1.5">
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
           Versions
         </h2>
@@ -48,7 +48,7 @@ export function VersionTimeline() {
 
       {/* pt-1: overflow-x-auto also clips vertically, which would cut the
           selected card's ring. */}
-      <div className="flex gap-2 overflow-x-auto px-4 pb-3 pt-1">
+      <div className="flex gap-2 overflow-x-auto px-4 pb-2 pt-1">
         {versions.map((v, i) => {
           const isActive = v.id === activeId;
           const isHead = v.id === headVersionId;
@@ -61,7 +61,7 @@ export function VersionTimeline() {
               type="button"
               onClick={() => selectVersion(v.id)}
               title={v.label ?? undefined}
-              className={`shrink-0 rounded-lg border px-3 py-2 text-left transition-all ${
+              className={`shrink-0 rounded-lg border px-3 py-1.5 text-left transition-all ${
                 STATUS_STYLES[v.status]
               } ${isActive ? "ring-2 ring-white/40" : "hover:brightness-125"}`}
             >
@@ -105,7 +105,7 @@ export function VersionTimeline() {
           <div
             key={job.id}
             title={job.instruction}
-            className="shrink-0 rounded-lg border border-dashed border-blue-500/50 bg-blue-500/5 px-3 py-2"
+            className="shrink-0 rounded-lg border border-dashed border-blue-500/50 bg-blue-500/5 px-3 py-1.5"
           >
             <div className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" />

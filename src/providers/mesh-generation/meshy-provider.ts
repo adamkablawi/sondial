@@ -1,6 +1,10 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import type { MeshGenerationProvider, JobStatus, MeshGenerationResult } from "../types";
+import { applyGlossyFinish } from "./apply-glossy-finish";
 
 const MESHY_API_BASE = "https://api.meshy.ai";
+const GENERATED_DIR = path.join(process.cwd(), "public", "generated");
 
 /**
  * "meshy-6-lite" is Meshy's own lightweight tier (same cost as the
@@ -45,6 +49,31 @@ export class MeshyProvider implements MeshGenerationProvider {
       Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
     };
+  }
+
+  /**
+   * Downloads the finished GLB, bakes in a fixed glossy finish, and saves it
+   * locally so the desktop viewer and AR load the exact same file. Never
+   * throws: any failure here falls back to Meshy's own URL unmodified — a
+   * cosmetic finish is not worth failing a generation over.
+   */
+  private async withGlossyFinish(taskId: string, meshyGlbUrl: string): Promise<string> {
+    try {
+      const response = await fetch(meshyGlbUrl);
+      if (!response.ok) throw new Error(`fetch failed: ${response.status}`);
+      const original = Buffer.from(await response.arrayBuffer());
+
+      const glossy = await applyGlossyFinish(original);
+
+      await mkdir(GENERATED_DIR, { recursive: true });
+      const filename = `${taskId}.glb`;
+      await writeFile(path.join(GENERATED_DIR, filename), glossy);
+
+      return `/generated/${filename}`;
+    } catch (err) {
+      console.error("[MeshyProvider] glossy finish failed, using Meshy's URL as-is:", err);
+      return meshyGlbUrl;
+    }
   }
 
   async generateMesh(input: {
@@ -167,10 +196,17 @@ export class MeshyProvider implements MeshGenerationProvider {
       // Prefer GLB. For the same model Meshy returns ~12 MB as GLB against
       // ~56 MB as OBJ, and the AR viewer wants GLB anyway; OBJ was only ever
       // preferred here for an OpenSCAD path that no longer exists.
-      const meshFileUrl = data.model_urls.glb || data.model_urls.obj || data.model_urls.fbx || "";
       const format = data.model_urls.glb ? "glb" as const
         : data.model_urls.obj ? "obj" as const
         : "fbx" as const;
+
+      // Only GLB carries PBR material factors the same way our patch expects;
+      // OBJ/FBX are passed through untouched (rare in practice — GLB is
+      // preferred above whenever Meshy offers it).
+      const meshFileUrl =
+        format === "glb" && data.model_urls.glb
+          ? await this.withGlossyFinish(taskId, data.model_urls.glb)
+          : data.model_urls.obj || data.model_urls.fbx || "";
 
       return {
         status: "complete",

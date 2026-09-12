@@ -20,6 +20,7 @@
     "infra:docker:down": "docker compose down"
   },
   "dependencies": {
+    "@gltf-transform/core": "^4.5.0",
     "@google/model-viewer": "^4.3.1",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",

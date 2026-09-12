@@ -73,6 +73,29 @@ export function ARLauncher({ meshUrl, meshFormat, usdzUrl, alt }: ARLauncherProp
   useEffect(() => {
     setRoomUrl(window.location.href);
     setOrigin(window.location.origin);
+
+    // A phone cannot reach "localhost", so the QR is rebuilt against the
+    // server's LAN address whenever the page was opened on a loopback host.
+    // Path, port and query are kept, so the code still opens this exact room.
+    const host = window.location.hostname;
+    if (host !== "localhost" && host !== "127.0.0.1" && host !== "[::1]") return;
+
+    let cancelled = false;
+    void fetch("/api/lan-address")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { address?: string | null } | null) => {
+        if (cancelled || !data?.address) return;
+        const url = new URL(window.location.href);
+        url.hostname = data.address;
+        setRoomUrl(url.href);
+      })
+      .catch(() => {
+        // Keep the page origin; the code just will not work off-device.
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // An explicit USDZ from the caller always wins; otherwise convert the GLB

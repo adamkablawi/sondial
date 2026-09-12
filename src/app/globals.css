@@ -10,6 +10,13 @@
   --glow-color-soft: rgba(255, 255, 255, 0.05);
 }
 
+/* Tailwind's type, spacing and the fixed panel widths are all rem-based, so the
+   root size is the single knob for overall UI scale. 15px reads a little tighter
+   than the 16px default without shrinking any one element out of proportion. */
+html {
+  font-size: 15px;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { generationQueue } from "@/lib/queue";
-import { publishRoomEvent, toJobDTO, toMessageDTO } from "@/lib/serialize";
+import { createInstructionJob } from "@/lib/generation";
+import { checkInstructionClarity, type DesignState } from "@/lib/design-state";
+import { publishRoomEvent, toMessageDTO } from "@/lib/serialize";
 
 /**
  * POST { sessionId, body, kind } -> { ok }
  *
  * Persist first, then publish — the socket layer is pure fan-out, so a dropped
  * connection can never lose a message. An INSTRUCTION additionally enqueues a
- * generation job pinned to the head version it was authored against.
+ * generation job pinned to the head version it was authored against — unless
+ * the agent's clarity check flags it as ambiguous, in which case a clarifying
+ * question is posted instead and no job is created; see
+ * `[slug]/messages/[messageId]/answer` for how picking an option resumes this.
  */
 export async function POST(
   request: Request,
@@ -63,30 +67,82 @@ export async function POST(
       return NextResponse.json({ ok: true });
     }
 
-    const baseVersionId = room.project.headVersionId;
-    if (!baseVersionId) {
-      return NextResponse.json(
-        { error: "Project has no base version to iterate from" },
-        { status: 409 },
-      );
+    // Ground the clarity check in the actual current design, when there is
+    // one. No head version (a brand-new/broken project) just falls through to
+    // createInstructionJob below, which already 409s on that case.
+    const headVersion = room.project.headVersionId
+      ? await db.objectVersion.findUnique({
+          where: { id: room.project.headVersionId },
+          include: { description: true },
+        })
+      : null;
+
+    if (headVersion?.description) {
+      const current: DesignState = {
+        summary: headVersion.description.summary,
+        geometry: headVersion.description.geometry,
+        materials: headVersion.description.materials,
+        dimensions: headVersion.description.dimensions,
+        constraints: headVersion.description.constraints,
+        function: headVersion.description.function,
+        rationale: headVersion.description.rationale,
+      };
+
+      const recent = await db.chatMessage.findMany({
+        where: { roomId: room.id },
+        orderBy: { createdAt: "desc" },
+        take: 12,
+        include: { participant: true },
+      });
+      const history = recent
+        .reverse()
+        .map((m) => ({ author: m.participant?.displayName ?? "system", body: m.body }));
+
+      const clarity = await checkInstructionClarity({ current, instruction: text, history });
+
+      if (!clarity.clear) {
+        const question = await db.chatMessage.create({
+          data: {
+            roomId: room.id,
+            kind: "AGENT",
+            body: clarity.question,
+            agentOptions: clarity.options,
+          },
+          include: { participant: true },
+        });
+        await publishRoomEvent(slug, { type: "message", message: toMessageDTO(question) });
+
+        // No job — nothing is generated until someone picks an option.
+        return NextResponse.json({ ok: true, clarifying: true });
+      }
+
+      if (clarity.confirmation) {
+        const confirmation = await db.chatMessage.create({
+          data: { roomId: room.id, kind: "AGENT", body: clarity.confirmation },
+          include: { participant: true },
+        });
+        await publishRoomEvent(slug, {
+          type: "message",
+          message: toMessageDTO(confirmation),
+        });
+      }
     }
 
-    const job = await db.generationJob.create({
-      data: {
+    try {
+      const job = await createInstructionJob({
         roomId: room.id,
+        roomSlug: slug,
         projectId: room.projectId,
-        baseVersionId,
+        headVersionId: room.project.headVersionId,
+        participantId: participant.id,
         messageId: message.id,
-        authorId: participant.id,
         instruction: text,
-      },
-      include: { author: true },
-    });
-
-    await generationQueue.add("generate", { jobId: job.id, roomSlug: slug });
-    await publishRoomEvent(slug, { type: "job", job: toJobDTO(job) });
-
-    return NextResponse.json({ ok: true, jobId: job.id });
+      });
+      return NextResponse.json({ ok: true, jobId: job.id });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not start generation";
+      return NextResponse.json({ error: msg }, { status: 409 });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

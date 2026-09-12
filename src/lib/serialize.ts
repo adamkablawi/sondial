@@ -29,6 +29,9 @@ export function toMessageDTO(
     body: message.body,
     createdAt: message.createdAt.toISOString(),
     author: toAuthor(message.participant),
+    agentOptions: message.agentOptions,
+    answeredOptionIndex: message.answeredOptionIndex,
+    answeredByName: message.answeredByName,
   };
 }
 

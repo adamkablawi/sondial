@@ -84,6 +84,9 @@ enum MessageKind {
   INSTRUCTION
   /// Server-authored status notice.
   SYSTEM
+  /// The design agent talking: a confirmation of how it read an instruction,
+  /// or — when agentOptions is set — a clarifying question awaiting an answer.
+  AGENT
 }
 
 model ChatMessage {
@@ -93,6 +96,18 @@ model ChatMessage {
   kind          MessageKind @default(CHAT)
   body          String
   createdAt     DateTime    @default(now())
+
+  /// Candidate instructions for an AGENT clarifying question. Picking one
+  /// submits it verbatim as a fresh INSTRUCTION — these are not free-form
+  /// choices, each is itself a complete, unambiguous request.
+  agentOptions        String[] @default([])
+  /// Index into agentOptions once someone has picked one. Null while
+  /// unanswered; the option list becomes inert once set.
+  answeredOptionIndex Int?
+  /// Denormalized display name captured at answer time — this is shown text,
+  /// not something ever queried by, so a relation back to Participant would
+  /// be more structure than the field needs.
+  answeredByName      String?
 
   room        Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
   participant Participant?   @relation(fields: [participantId], references: [id], onDelete: SetNull)

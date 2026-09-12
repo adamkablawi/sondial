@@ -215,6 +215,100 @@ export async function evolveDesignState(input: {
   return parseState(raw, fallback);
 }
 
+// ── Clarity check ──
+
+/**
+ * Whether an instruction can be acted on as written, or is genuinely
+ * ambiguous enough to ask about first. This runs before a job is ever
+ * created — an ambiguous instruction produces no GenerationJob at all, only a
+ * chat question; nothing is generated until someone picks an option, so this
+ * never spends a Meshy call on a guess.
+ */
+export type ClarityCheck =
+  | { clear: true; confirmation: string | null }
+  | { clear: false; question: string; options: string[] };
+
+const CLARITY_SYSTEM = `You decide whether a change request for a product under collaborative design is clear enough to act on directly, or genuinely ambiguous.
+
+You receive the CURRENT design state and ONE change request, plus recent room discussion for context.
+
+Default to clear. Most requests are — only flag ambiguity when acting on the request as written would require guessing between genuinely different outcomes (e.g. "make it bigger" on an object with several independently-sized parts, where which part is unstated and the room discussion doesn't settle it). Do not flag ambiguity over a minor detail a reasonable default handles fine (an unspecified exact shade, a vague-but-conventional dimension) — filling those in sensibly is already evolveDesignState's job, not something worth interrupting the room for.
+
+If clear:
+Respond with {"clear": true, "confirmation": string | null}. Set "confirmation" only when your reading of the request resolves something a reader might not have caught (a pronoun, an implicit target, a choice between plausible interpretations you picked one of) — one short clause, e.g. "reading 'it' as the handle." Otherwise set it to null; most clear requests need no confirmation at all.
+
+If genuinely ambiguous:
+Respond with {"clear": false, "question": string, "options": string[]}. "question" is one short sentence naming the ambiguity. "options" is 2 to 4 complete, concrete, standalone instructions — each one fully replaces the original request if picked, phrased exactly as a user would type it ("Make the handle 15% thicker", not "the handle").
+
+Respond with strict JSON only, one of the two shapes above.`;
+
+function parseClarity(raw: string | null): ClarityCheck {
+  const fallback: ClarityCheck = { clear: true, confirmation: null };
+  if (!raw) return fallback;
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      clear?: unknown;
+      confirmation?: unknown;
+      question?: unknown;
+      options?: unknown;
+    };
+
+    if (parsed.clear === false) {
+      const question = typeof parsed.question === "string" ? parsed.question.trim() : "";
+      const options = Array.isArray(parsed.options)
+        ? parsed.options
+            .filter((o): o is string => typeof o === "string" && o.trim().length > 0)
+            .map((o) => o.trim())
+        : [];
+
+      // A malformed "ambiguous" answer is less trustworthy than just
+      // proceeding — never block generation on a broken clarity check.
+      if (question && options.length >= 2) {
+        return { clear: false, question, options: options.slice(0, 4) };
+      }
+      return fallback;
+    }
+
+    const confirmation =
+      typeof parsed.confirmation === "string" && parsed.confirmation.trim()
+        ? parsed.confirmation.trim()
+        : null;
+    return { clear: true, confirmation };
+  } catch {
+    return fallback;
+  }
+}
+
+export async function checkInstructionClarity(input: {
+  current: DesignState;
+  instruction: string;
+  history?: HistoryEntry[];
+}): Promise<ClarityCheck> {
+  // The first instruction against an unestablished design defines the object
+  // from scratch (see evolveDesignState's placeholder branch) — nothing to
+  // disambiguate yet, and seeding already fills gaps with sensible defaults.
+  if (input.current.summary === UNSET_SUMMARY) {
+    return { clear: true, confirmation: null };
+  }
+
+  const historyText = (input.history ?? [])
+    .slice(-12)
+    .map((h) => `${h.author}: ${h.body}`)
+    .join("\n");
+
+  const user = [
+    `CURRENT DESIGN STATE:\n${renderDesignState(input.current)}`,
+    historyText ? `RECENT ROOM DISCUSSION:\n${historyText}` : null,
+    `CHANGE REQUEST:\n"${input.instruction}"`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const raw = await callLLM(CLARITY_SYSTEM, user, { json: true, maxTokens: 400 });
+  return parseClarity(raw);
+}
+
 // ── Instruction classification ──
 
 export type Strategy = "REGENERATE" | "RETEXTURE";

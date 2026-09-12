@@ -24,10 +24,15 @@ export interface ParticipantDTO {
 
 export interface MessageDTO {
   id: string;
-  kind: "CHAT" | "INSTRUCTION" | "SYSTEM";
+  kind: "CHAT" | "INSTRUCTION" | "SYSTEM" | "AGENT";
   body: string;
   createdAt: string;
   author: { id: string; displayName: string; color: string } | null;
+  /// AGENT clarifying questions only: candidate instructions to choose from.
+  agentOptions: string[];
+  /// Set once an AGENT question has been answered — index into agentOptions.
+  answeredOptionIndex: number | null;
+  answeredByName: string | null;
 }
 
 export interface VersionDTO {

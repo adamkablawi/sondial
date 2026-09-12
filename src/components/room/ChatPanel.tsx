@@ -2,9 +2,97 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRoomStore } from "@/stores/room-store";
-import type { JobDTO } from "@/lib/events";
+import type { JobDTO, MessageDTO } from "@/lib/events";
 
 const ACTIVE: Array<JobDTO["status"]> = ["QUEUED", "RUNNING"];
+
+/**
+ * The design agent talking: either a brief confirmation of how it read an
+ * instruction, or — when agentOptions is set — a clarifying question. Options
+ * are Claude-Code-style: pick one, it submits verbatim as the instruction.
+ * No job is ever created from a question alone, only from a picked option.
+ */
+function AgentMessage({
+  message,
+  roomSlug,
+  sessionId,
+}: {
+  message: MessageDTO;
+  roomSlug: string | null;
+  sessionId: string | null;
+}) {
+  const [answering, setAnswering] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const hasOptions = message.agentOptions.length > 0;
+  const answered = message.answeredOptionIndex !== null;
+
+  const pick = async (index: number) => {
+    if (!roomSlug || !sessionId || answering !== null || answered) return;
+    setAnswering(index);
+    setError(null);
+    try {
+      const res = await fetch(`/api/rooms/${roomSlug}/messages/${message.id}/answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, optionIndex: index }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Could not submit that choice");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not submit that choice");
+    } finally {
+      setAnswering(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2">
+      <div className="flex items-center gap-1.5">
+        <span className="h-2 w-2 shrink-0 rounded-full bg-violet-400" />
+        <span className="text-[11px] font-medium text-violet-300">Agent</span>
+      </div>
+      <p className="text-sm leading-relaxed text-violet-100">{message.body}</p>
+
+      {hasOptions && (
+        <div className="mt-0.5 flex flex-col gap-1">
+          {message.agentOptions.map((option, i) => {
+            const isPicked = message.answeredOptionIndex === i;
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => void pick(i)}
+                disabled={answered || answering !== null}
+                className={`flex items-start gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
+                  isPicked
+                    ? "border-violet-400/50 bg-violet-500/15 text-violet-100"
+                    : answered
+                      ? "border-neutral-800 text-neutral-600"
+                      : "border-neutral-700 text-neutral-300 hover:border-violet-400/40 hover:bg-violet-500/10"
+                } disabled:cursor-default`}
+              >
+                <span className="mt-px shrink-0 font-mono text-[10px] text-neutral-500">
+                  {isPicked ? "✓" : i + 1}
+                </span>
+                <span className="flex-1">{option}</span>
+                {answering === i && <span className="shrink-0 text-[10px]">…</span>}
+              </button>
+            );
+          })}
+          {answered && message.answeredByName && (
+            <p className="mt-0.5 text-[10px] text-neutral-600">
+              picked by {message.answeredByName}
+            </p>
+          )}
+        </div>
+      )}
+
+      {error && <p className="text-[11px] text-red-400">{error}</p>}
+    </div>
+  );
+}
 
 function JobRow({ job }: { job: JobDTO }) {
   const running = job.status === "RUNNING";
@@ -96,6 +184,12 @@ export function ChatPanel() {
               <p key={m.id} className="py-1 text-center text-[11px] italic text-neutral-500">
                 {m.body}
               </p>
+            );
+          }
+
+          if (m.kind === "AGENT") {
+            return (
+              <AgentMessage key={m.id} message={m} roomSlug={slug} sessionId={sessionId} />
             );
           }
 

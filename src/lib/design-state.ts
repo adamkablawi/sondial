@@ -51,6 +51,38 @@ const EMPTY: DesignState = {
   rationale: "Initial concept; no design decisions recorded yet.",
 };
 
+/**
+ * A brief that names no object at all ("hi", "test", a bare greeting).
+ * Seeding one of these against the LLM is what produces the confidently
+ * hallucinated identity: told to never answer "unknown", the model invents a
+ * full concrete product out of nothing, and that invention then becomes canon
+ * that every later edit is instructed to preserve. Short-circuiting here
+ * means nothing is ever invented from a brief this thin — see the placeholder
+ * branch in evolveDesignState below for how the first real instruction then
+ * defines the object instead of editing a fiction.
+ */
+const FILLER_ONLY =
+  /^(hi|hey|hello|hiya|yo|sup|howdy|ok|okay|k|kk|test|testing|hmm+|uh+|um+|lol)[\s.!?]*$/i;
+
+function isDescriptiveBrief(brief: string): boolean {
+  const trimmed = brief.trim();
+  return trimmed.length > 0 && !FILLER_ONLY.test(trimmed);
+}
+
+/** Sentinel: identifies a design state whose object has never been established. */
+const UNSET_SUMMARY =
+  "No object has been defined yet — the next request will establish what this is.";
+
+const PLACEHOLDER: DesignState = {
+  summary: UNSET_SUMMARY,
+  geometry: "Not yet described.",
+  materials: "Not yet specified.",
+  dimensions: "Not yet specified.",
+  constraints: "None recorded.",
+  function: "Not yet specified.",
+  rationale: "The initial brief named no object, so nothing was invented.",
+};
+
 /** Human-readable rendering, stored as `raw` and shown in the design panel. */
 export function renderDesignState(state: DesignState): string {
   return [
@@ -102,6 +134,13 @@ export async function seedDesignState(input: {
   brief: string;
   constraints?: string | null;
 }): Promise<DesignState> {
+  if (!isDescriptiveBrief(input.brief)) {
+    return {
+      ...PLACEHOLDER,
+      constraints: input.constraints?.trim() || PLACEHOLDER.constraints,
+    };
+  }
+
   const fallback: DesignState = {
     ...EMPTY,
     summary: input.brief,
@@ -144,6 +183,13 @@ export async function evolveDesignState(input: {
   history?: HistoryEntry[];
   constraints?: string | null;
 }): Promise<DesignState> {
+  // Nothing has been established yet. Merging an edit onto an invented
+  // placeholder is exactly what produced the reported bug — the first
+  // substantive instruction defines the object from scratch instead.
+  if (input.current.summary === UNSET_SUMMARY) {
+    return seedDesignState({ brief: input.instruction, constraints: input.constraints });
+  }
+
   // Without a key, record the request honestly rather than silently dropping it.
   const fallback: DesignState = {
     ...input.current,

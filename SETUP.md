@@ -18,16 +18,20 @@ Project: `ontycqfsutxpyhozsoxt`
    function, RLS, and the public `models` bucket.
 2. **Authentication → Sign In / Providers → Anonymous sign-ins → enable.**
    Without this nobody can join a room; it is the single easiest step to miss.
-3. **Settings → API Keys** → copy the **anon/publishable** key and the
-   **service_role/secret** key.
+3. **Settings → API Keys** → copy both keys. Supabase's current key format:
+   - `sb_publishable_...` → `NEXT_PUBLIC_SUPABASE_ANON_KEY` (safe in the browser)
+   - `sb_secret_...` → `SUPABASE_SERVICE_ROLE_KEY` (worker only, bypasses RLS)
+
+   The env var names still say anon/service_role because that's what the
+   Supabase client libraries expect; the new keys slot into the same places.
 
 ### 2. Local env (1 min)
 
-`.env.local` is already filled in with your project URL. Paste the two keys:
+`.env.local` already has your project URL and publishable key. Paste the
+secret key into the one remaining blank:
 
 ```
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_...
 ```
 
 Then prove the whole Supabase side is correct before writing any more config:

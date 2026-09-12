@@ -56,8 +56,13 @@ io.on("connection", (socket: Socket) => {
   socket.on(SOCKET_EVENTS.join, async (payload: JoinPayload) => {
     if (!payload?.roomSlug || !payload?.sessionId) return;
 
+    const room = await db.room.findUnique({ where: { slug: payload.roomSlug } });
+    if (!room) return;
+
     const participant = await db.participant.findUnique({
-      where: { sessionId: payload.sessionId },
+      where: {
+        roomId_sessionId: { roomId: room.id, sessionId: payload.sessionId },
+      },
     });
     if (!participant) return;
 

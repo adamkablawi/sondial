@@ -40,8 +40,10 @@ export async function POST(
       return NextResponse.json({ error: "Room not found" }, { status: 404 });
     }
 
-    const participant = await db.participant.findUnique({ where: { sessionId } });
-    if (!participant || participant.roomId !== room.id) {
+    const participant = await db.participant.findUnique({
+      where: { roomId_sessionId: { roomId: room.id, sessionId } },
+    });
+    if (!participant) {
       return NextResponse.json({ error: "Not a participant of this room" }, { status: 403 });
     }
 

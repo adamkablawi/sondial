@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { participantColor } from "@/lib/identity";
 import { publishRoomEvent } from "@/lib/serialize";
@@ -8,8 +9,10 @@ import type { ParticipantDTO } from "@/lib/events";
 /**
  * POST { displayName, sessionId? } -> { participant, sessionId }
  *
- * A returning sessionId keeps the participant's identity so attribution on past
- * messages and versions survives a reload.
+ * Idempotent: the same session joining the same room twice updates one row
+ * rather than creating a second participant. The client keeps one session token
+ * for life, so attribution on past messages and versions survives a reload and
+ * carries across rooms.
  */
 export async function POST(
   request: Request,
@@ -35,24 +38,30 @@ export async function POST(
       return NextResponse.json({ error: "Room not found" }, { status: 404 });
     }
 
-    const existing = sessionId
-      ? await db.participant.findUnique({ where: { sessionId } })
-      : null;
+    const token = sessionId?.trim() || randomUUID();
+    const key = { roomId_sessionId: { roomId: room.id, sessionId: token } };
 
-    const participant =
-      existing && existing.roomId === room.id
-        ? await db.participant.update({
-            where: { id: existing.id },
-            data: { displayName: trimmed, connected: true, lastSeenAt: new Date() },
-          })
-        : await db.participant.create({
-            data: {
-              roomId: room.id,
-              displayName: trimmed,
-              sessionId: randomUUID(),
-              color: participantColor(room._count.participants),
-            },
-          });
+    let participant;
+    try {
+      participant = await db.participant.upsert({
+        where: key,
+        update: { displayName: trimmed, connected: true, lastSeenAt: new Date() },
+        create: {
+          roomId: room.id,
+          sessionId: token,
+          displayName: trimmed,
+          color: participantColor(room._count.participants),
+        },
+      });
+    } catch (err) {
+      // Two simultaneous joins can both miss the row and race to insert it.
+      // The loser reads back the winner's row instead of failing the join.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        participant = await db.participant.findUniqueOrThrow({ where: key });
+      } else {
+        throw err;
+      }
+    }
 
     const all = await db.participant.findMany({
       where: { roomId: room.id },

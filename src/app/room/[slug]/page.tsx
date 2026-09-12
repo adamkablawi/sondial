@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ModelViewer } from "@/components/viewer/ModelViewer";
 import { ChatPanel } from "@/components/room/ChatPanel";
@@ -70,10 +70,15 @@ export default function RoomPage() {
   );
 
   // Returning visitors rejoin automatically and keep their attribution.
+  // Keyed on the slug rather than a boolean because React Strict Mode invokes
+  // effects twice in dev: without the guard both invocations fire a join.
+  const autoJoinedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!joined && !joining && storedName && sessionId) void join(storedName);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storedName, sessionId]);
+    if (!slug || !storedName || !sessionId) return;
+    if (autoJoinedFor.current === slug) return;
+    autoJoinedFor.current = slug;
+    void join(storedName);
+  }, [slug, storedName, sessionId, join]);
 
   if (!joined) {
     return (

@@ -43,8 +43,6 @@ export function toVersionDTO(
     status: version.status,
     meshUrl: version.meshUrl,
     meshFormat: version.meshFormat,
-    cadSource: version.cadSource,
-    cadSourcePath: version.cadSourcePath,
     createdAt: version.createdAt.toISOString(),
     createdBy: toAuthor(version.createdBy),
   };

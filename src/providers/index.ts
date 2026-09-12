@@ -1,7 +1,6 @@
 import { MockMeshProvider } from "./mesh-generation/mock-provider";
 import { HuggingFaceProvider } from "./mesh-generation/hf-provider";
 import { MeshyProvider } from "./mesh-generation/meshy-provider";
-import { ZooProvider } from "./mesh-generation/zoo-provider";
 import { MockImageProvider } from "./image-generation/mock-provider";
 import { HuggingFaceImageProvider } from "./image-generation/hf-provider";
 
@@ -11,7 +10,6 @@ const meshProviders: Record<string, new () => MeshGenerationProvider> = {
   mock: MockMeshProvider,
   huggingface: HuggingFaceProvider,
   meshy: MeshyProvider,
-  zoo: ZooProvider,
 };
 
 const imageProviders: Record<string, new () => ImageGenerationProvider> = {

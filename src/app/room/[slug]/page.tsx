@@ -7,7 +7,6 @@ import { ARLauncher } from "@/components/viewer/ARLauncher";
 import { ChatPanel } from "@/components/room/ChatPanel";
 import { DesignStatePanel } from "@/components/room/DesignStatePanel";
 import { PresenceBar } from "@/components/room/PresenceBar";
-import { SourcePanel } from "@/components/room/SourcePanel";
 import { VersionTimeline } from "@/components/room/VersionTimeline";
 import { useRoomSocket } from "@/hooks/useRoomSocket";
 import { useActiveVersion, useRoomStore } from "@/stores/room-store";
@@ -238,11 +237,8 @@ export default function RoomPage() {
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className="flex w-72 shrink-0 flex-col overflow-hidden border-r border-neutral-800 bg-neutral-950">
-          <div className="min-h-0 flex-1 overflow-hidden">
-            <DesignStatePanel />
-          </div>
-          <SourcePanel />
+        <aside className="w-72 shrink-0 overflow-hidden border-r border-neutral-800 bg-neutral-950">
+          <DesignStatePanel />
         </aside>
 
         <section className="flex min-w-0 flex-1 flex-col">

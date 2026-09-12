@@ -129,12 +129,6 @@ model ObjectVersion {
   meshyTaskId  String?
   thumbnailUrl String?
 
-  /// Parametric CAD source (KCL) for source-based providers. This is the real
-  /// artifact for those versions: the next edit is applied to this text, which
-  /// is what makes changes precise instead of a fresh guess.
-  cadSource     String?
-  cadSourcePath String?
-
   createdById String?
   createdAt   DateTime @default(now())
 

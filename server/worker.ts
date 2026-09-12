@@ -207,13 +207,7 @@ async function processJob(payload: GenerationJobPayload): Promise<void> {
     // must not leave one behind — the attempt is recorded on GenerationJob, and
     // the timeline shows in-flight work from the job instead.
     //
-    // `previousSource` lets a source-based provider (Zoo) edit the base
-    // version's KCL directly, which is what makes an edit surgical. Mesh
-    // providers ignore it and regenerate from the prompt.
-    const { jobId: meshJobId } = await meshProvider.generateMesh({
-      prompt,
-      previousSource: baseVersion.cadSource ?? undefined,
-    });
+    const { jobId: meshJobId } = await meshProvider.generateMesh({ prompt });
 
     const startedAt = Date.now();
     let lastProgress = -1;
@@ -262,8 +256,6 @@ async function processJob(payload: GenerationJobPayload): Promise<void> {
           meshUrl: proxied(result.meshFileUrl),
           meshFormat: result.format,
           meshyTaskId: meshJobId,
-          cadSource: result.source ?? null,
-          cadSourcePath: result.sourcePath ?? null,
           description: {
             create: { ...nextState, raw: renderDesignState(nextState) },
           },
